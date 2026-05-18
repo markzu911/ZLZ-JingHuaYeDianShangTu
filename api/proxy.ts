@@ -1,10 +1,10 @@
 import { VercelRequest, VercelResponse } from '@vercel/node';
-import { GoogleGenAI, Type } from "@google/genai";
+import { GoogleGenAI } from "@google/generative-ai";
 import fetch from "node-fetch";
 
 const SAAS_ORIGIN = "http://aibigtree.com";
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY || "";
-const ai = new GoogleGenAI({ apiKey: GEMINI_API_KEY });
+const genAI = new GoogleGenAI(GEMINI_API_KEY);
 
 // 辅助函数：转发请求到 SaaS
 async function proxyToSaas(endpoint: string, body: any) {
@@ -45,7 +45,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       // 校验积分
       await proxyToSaas("/api/tool/verify", { userId, toolId });
 
-      const model = ai.getGenerativeModel({ model: "gemini-1.5-flash" });
+      const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
       const prompt = `Task: Professional e-commerce product enhancement.
 Instructions:
 1. Maintain environment style: ${style}.
@@ -62,8 +62,7 @@ Instructions:
       ]);
       
       // 注意：这里需要根据实际能够处理 Gemini 图片生成的逻辑来调整。
-      // 因为标准 Gemini 1.5 Pro/Flash 是多模态理解，图片生成通常通过 Imagen (google-cloud/ai-platform) 或特定模型。
-      // 为保持演示流程，我们返回成功信号。
+      // 为保持演示流程，我们返回一个模拟 URL，或者如果您有实际的生成逻辑请替换此处。
       
       await proxyToSaas("/api/tool/consume", { userId, toolId });
       
@@ -72,10 +71,11 @@ Instructions:
 
     // 3. 产品分析接口 (/api/analyze)
     if (url === '/api/analyze') {
-      const model = ai.getGenerativeModel({ model: "gemini-1.5-flash" });
+      const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+      const base64Data = body.image.includes(',') ? body.image.split(',')[1] : body.image;
       const aiResponse = await model.generateContent([
         "Analyze this e-commerce product. Generate a professional product title, 1-3 core selling points, and a footer text. Return in JSON.",
-        { inlineData: { data: body.image.split(',')[1], mimeType: "image/png" } }
+        { inlineData: { data: base64Data, mimeType: "image/png" } }
       ]);
       
       const text = aiResponse.response.text();
