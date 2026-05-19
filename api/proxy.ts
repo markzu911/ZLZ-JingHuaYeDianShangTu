@@ -121,31 +121,41 @@ Instructions:
         }
         if (!generatedBase64) throw new Error("AI failed to generate image");
 
-        // Consume
-        await fetch(`${SAAS_BASE}/api/tool/consume`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ userId, toolId })
-        });
-
-        // Save to SaaS OSS
         const imageBuffer = Buffer.from(generatedBase64, 'base64');
-        const tokenRes = await fetch(`${SAAS_BASE}/api/upload/direct-token`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            userId, toolId, source: "result", mimeType: "image/png", 
-            fileName: "generated.png", fileSize: imageBuffer.length
+
+        // Parallelize consume and token fetch to shave off a bit of time
+        const [consumeRes, tokenRes] = await Promise.all([
+          fetch(`${SAAS_BASE}/api/tool/consume`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ userId, toolId })
+          }),
+          fetch(`${SAAS_BASE}/api/upload/direct-token`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              userId, toolId, source: "result", mimeType: "image/png", 
+              fileName: "generated.png", fileSize: imageBuffer.length
+            })
           })
-        });
+        ]);
+
+        if (!consumeRes.ok) {
+          const consume = await consumeRes.json();
+          throw new Error(consume.message || "Points consumption failed");
+        }
+
+        if (!tokenRes.ok) throw new Error("Failed to get OSS upload token");
         const tokenData = await tokenRes.json();
 
+        // 3. Upload to OSS (this is the bottleneck)
         await fetch(tokenData.uploadUrl, {
           method: 'PUT',
           headers: tokenData.headers || { 'Content-Type': 'image/png' },
           body: imageBuffer
         });
 
+        // 4. Commit
         const commitRes = await fetch(`${SAAS_BASE}/api/upload/commit`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },

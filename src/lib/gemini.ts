@@ -15,12 +15,22 @@ export async function analyzeProduct(base64Image: string): Promise<AnalysisResul
     }),
   });
   
+  const text = await response.text();
+  let data;
+  try {
+    data = text ? JSON.parse(text) : {};
+  } catch {
+    data = null;
+  }
+
   if (!response.ok) {
-    const error = await response.json();
-    throw new Error(error.error || "Analysis failed");
+    if (response.status === 504) {
+      throw new Error("GENERATION_TIMEOUT_BUT_MAY_HAVE_SAVED");
+    }
+    throw new Error(data?.error || "Analysis failed");
   }
   
-  return response.json();
+  return data;
 }
 
 /**
@@ -57,11 +67,20 @@ export async function generateEcomBackground(
     }),
   });
 
-  if (!response.ok) {
-    const error = await response.json();
-    throw new Error(error.error || "Generation failed");
+  const text = await response.text();
+  let data;
+  try {
+    data = text ? JSON.parse(text) : {};
+  } catch {
+    data = null;
   }
 
-  const result = await response.json();
-  return result.generatedUrl;
+  if (!response.ok) {
+    if (response.status === 504) {
+      throw new Error("GENERATION_TIMEOUT_BUT_MAY_HAVE_SAVED");
+    }
+    throw new Error(data?.error || "Generation failed");
+  }
+
+  return data.generatedUrl;
 }

@@ -104,23 +104,27 @@ app.post("/api/gemini", async (req, res) => {
       }
       if (!generatedBase64) throw new Error("AI Generation failed");
 
-      // Consume
-      await fetch(`${SAAS_BASE}/api/tool/consume`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId, toolId })
-      });
-
-      // OSS Save Flow
       const imageBuffer = Buffer.from(generatedBase64, 'base64');
-      const tokenRes = await fetch(`${SAAS_BASE}/api/upload/direct-token`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          userId, toolId, source: "result", mimeType: "image/png", 
-          fileName: "generated.png", fileSize: imageBuffer.length
+
+      // Parallelize consume and token fetch
+      const [consumeRes, tokenRes] = await Promise.all([
+        fetch(`${SAAS_BASE}/api/tool/consume`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ userId, toolId })
+        }),
+        fetch(`${SAAS_BASE}/api/upload/direct-token`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            userId, toolId, source: "result", mimeType: "image/png", 
+            fileName: "generated.png", fileSize: imageBuffer.length
+          })
         })
-      });
+      ]);
+
+      if (!consumeRes.ok) throw new Error("Points consumption failed");
+      if (!tokenRes.ok) throw new Error("Failed to get OSS upload token");
       const tokenData = await tokenRes.json();
 
       await fetch(tokenData.uploadUrl, {

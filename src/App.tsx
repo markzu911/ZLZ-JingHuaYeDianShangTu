@@ -287,9 +287,54 @@ export default function App() {
             setGeneratedImages(prev => [...prev, url]);
             setSelectedImageIndex(i); // Update to show latest image
             saveToHistory(wrapHistoryItem(url, itemAnalysis));
-          } catch (imgError) {
-          console.error(`Perspective ${i + 1} generation failed:`, imgError);
-        }
+          } catch (imgError: any) {
+            console.error(`Perspective ${i + 1} generation error:`, imgError);
+            
+            if (imgError.message === "GENERATION_TIMEOUT_BUT_MAY_HAVE_SAVED") {
+              // Wait 4 seconds for SaaS to finish async processing potentially
+              await new Promise(resolve => setTimeout(resolve, 4000));
+              
+              // Refresh history from SaaS
+              try {
+                const { userId, role } = saasContext;
+                const res = await fetch(`/api/upload/image?userId=${userId}&role=${role || 1}`);
+                const result = await res.json();
+                
+                if (result.success && result.data && result.data.length > 0) {
+                  // Try to find the image that was just saved (it should be the first one)
+                  const latestImg = result.data[0];
+                  // Simple check: if it was created in the last minute
+                  const createdTime = new Date(latestImg.createdAt).getTime();
+                  const now = new Date().getTime();
+                  
+                  if (now - createdTime < 120000) { // last 2 mins
+                    const url = latestImg.url;
+                    setGeneratedImages(prev => [...prev, url]);
+                    setSelectedImageIndex(i);
+                    console.log("Recovered 504 image from SaaS:", url);
+                    
+                    // We don't save to history again because fetchHistory() will be called eventually or we manually update state
+                    const mappedItem: GeneratedItem = {
+                      id: latestImg.id,
+                      originalImage: originalImage!,
+                      generatedImage: latestImg.url,
+                      title: latestImg.fileName.split('/').pop()?.split('_').pop() || 'AI海报',
+                      sellingPoints: newAnalysis.sellingPoints,
+                      footer: newAnalysis.footer,
+                      style: selectedStyle.name,
+                      ratio: selectedRatio,
+                      resolution: selectedResolution,
+                      timestamp: new Date(latestImg.createdAt).toLocaleTimeString(),
+                    };
+                    setHistory(prev => [mappedItem, ...prev.filter(h => h.id !== mappedItem.id)]);
+                    continue; // Successfully recovered!
+                  }
+                }
+              } catch (refreshErr) {
+                console.error("Failed to recover image from history:", refreshErr);
+              }
+            }
+          }
       }
 
       if (generatedImages.length === 0 && !isGenerating) {
