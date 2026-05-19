@@ -6,10 +6,13 @@ export interface AnalysisResult {
 }
 
 export async function analyzeProduct(base64Image: string): Promise<AnalysisResult> {
-  const response = await fetch("/api/analyze", {
+  const response = await fetch("/api/gemini", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ image: base64Image }),
+    body: JSON.stringify({ 
+      type: "analyze",
+      image: base64Image 
+    }),
   });
   
   if (!response.ok) {
@@ -23,7 +26,7 @@ export async function analyzeProduct(base64Image: string): Promise<AnalysisResul
 /**
  * Note: generateEcomBackground now is a more complex flow in the server.
  * However, to keep App.tsx largely unchanged, we'll implement a wrapper
- * that calls our new generate-and-save endpoint.
+ * that calls our new consolidated /api/gemini endpoint.
  */
 export async function generateEcomBackground(
   style: string, 
@@ -37,10 +40,11 @@ export async function generateEcomBackground(
   userId?: string,
   toolId?: string
 ): Promise<string> {
-  const response = await fetch("/api/generate-and-save", {
+  const response = await fetch("/api/gemini", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
+      type: "generate",
       userId: userId || (window as any).SAAS_CONTEXT?.userId || "dev_user",
       toolId: toolId || (window as any).SAAS_CONTEXT?.toolId || "dev_tool",
       style,
@@ -59,7 +63,5 @@ export async function generateEcomBackground(
   }
 
   const result = await response.json();
-  // Return the generated base64 for immediate UI feedback, 
-  // though it's also saved to SaaS OSS and DB now.
   return result.generatedUrl;
 }
