@@ -4,6 +4,9 @@
       "source": "/api/(.*)",
       "destination": "/api/proxy.ts"
     },
-    { "source": "/(.*)", "destination": "/index.html" }
+    {
+      "source": "/(.*)",
+      "destination": "/index.html"
+    }
   ]
 }

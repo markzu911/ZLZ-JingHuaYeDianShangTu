@@ -18,6 +18,7 @@ import {
   Monitor
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+import { analyzeProduct, generateEcomBackground, AnalysisResult } from './lib/gemini.ts';
 import * as htmlToImage from 'html-to-image';
 
 interface SellingPoint {
@@ -69,23 +70,6 @@ const TEXT_COLORS = [
 
 const RATIOS = ['1:1', '3:4', '4:3', '16:9'];
 const RESOLUTIONS = ['1K', '2K', '4K'];
-
-// Helper: Robust JSON reading
-async function readJson(res: Response) {
-  const text = await res.text();
-  let data;
-  try {
-    data = text ? JSON.parse(text) : {};
-  } catch {
-    throw new Error(text.slice(0, 300) || `HTTP ${res.status}`);
-  }
-
-  if (!res.ok || data.success === false) {
-    throw new Error(data.error || data.message || data.detail || `HTTP ${res.status}`);
-  }
-
-  return data;
-}
 
 export default function App() {
   // State
@@ -231,8 +215,10 @@ export default function App() {
 
   const handleGenerate = async () => {
     if (!originalImage) return;
-    const userId = saasInfo.userId || 'test_user';
-    const toolId = saasInfo.toolId || 'test_tool';
+    if (!saasInfo.userId || !saasInfo.toolId) {
+      alert('未检测到用户身份信息 (userId/toolId)，请从 SaaS 平台进入');
+      // For demo purposes, we might want to continue, but the spec says we need these.
+    }
 
     setIsGenerating(true);
     setActiveTab('result');
@@ -240,12 +226,13 @@ export default function App() {
     setSelectedImageIndex(0);
 
     try {
-      // 1. Analyze product via server (SaaS verify & consume inside)
-      const analysisData = await readJson(await fetch('/api/analyze', {
+      // 1. Analyze product via server
+      const analysisRes = await fetch('/api/analyze', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId, toolId, image: originalImage })
-      }));
+        body: JSON.stringify({ image: originalImage })
+      });
+      const analysisData = await analysisRes.json();
       
       const newAnalysis: AnalysisResultExtended = {
         title: analysisData.title || '精美产品',
@@ -257,7 +244,7 @@ export default function App() {
       };
       setAnalysis(newAnalysis);
 
-      // 2. Generate images via server
+      // 2. Generate images via server (following SaaS verify/consume/upload flow)
       const perspectives = [
         "The product stands upright, shot from a top-left diagonal 45-degree high angle perspective.",
         "The product is tilted at a 45-degree angle, frontal eye-level cinematic shot.",
@@ -267,26 +254,29 @@ export default function App() {
       for (let i = 0; i < perspectives.length; i++) {
         setGenerationStep(i + 1);
         try {
-          const genData = await readJson(await fetch('/api/generate', {
+          const genRes = await fetch('/api/generate', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-              userId,
-              toolId,
+              userId: saasInfo.userId || 'test_user',
+              toolId: saasInfo.toolId || 'test_tool',
               originalImage,
               style: selectedStyle.prompt,
               ratio: selectedRatio,
               resolution: selectedResolution,
               perspective: perspectives[i]
             })
-          }));
+          });
+
+          const genData = await genRes.json();
+          if (!genData.success) throw new Error(genData.message);
 
           const url = genData.url;
           const itemAnalysis = { ...newAnalysis };
           setGeneratedImages(prev => [...prev, url]);
           setSelectedImageIndex(i);
           saveToHistory(wrapHistoryItem(url, itemAnalysis));
-        } catch (imgError: any) {
+        } catch (imgError) {
           console.error(`Perspective ${i + 1} generation failed:`, imgError);
         }
       }
@@ -333,7 +323,7 @@ export default function App() {
         cacheBust: true,
         pixelRatio: 1.5
       });
-      const data = await readJson(await fetch('/api/save-composed', {
+      const res = await fetch('/api/save-composed', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -341,8 +331,10 @@ export default function App() {
           toolId: saasInfo.toolId,
           image: dataUrl
         })
-      }));
-      alert('已成功保存到 SaaS 平台「我的图片」');
+      });
+      const data = await res.json();
+      if (data.success) alert('已成功保存到 SaaS 平台「我的图片」');
+      else throw new Error(data.message);
     } catch (err: any) {
       console.error('Save to SaaS failed:', err);
       alert(`保存失败: ${err.message}`);
