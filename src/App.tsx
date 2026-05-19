@@ -18,6 +18,7 @@ import {
   Monitor
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+import { analyzeProduct, generateEcomBackground, AnalysisResult } from './lib/gemini.ts';
 import * as htmlToImage from 'html-to-image';
 
 interface SellingPoint {
@@ -70,23 +71,6 @@ const TEXT_COLORS = [
 const RATIOS = ['1:1', '3:4', '4:3', '16:9'];
 const RESOLUTIONS = ['1K', '2K', '4K'];
 
-// Helper: Robust JSON reading
-async function readJson(res: Response) {
-  const text = await res.text();
-  let data;
-  try {
-    data = text ? JSON.parse(text) : {};
-  } catch {
-    throw new Error(text.slice(0, 300) || `HTTP ${res.status}`);
-  }
-
-  if (!res.ok || data.success === false) {
-    throw new Error(data.error || data.message || data.detail || `HTTP ${res.status}`);
-  }
-
-  return data;
-}
-
 export default function App() {
   // State
   const [originalImage, setOriginalImage] = useState<string | null>(null);
@@ -103,6 +87,43 @@ export default function App() {
   const [activeTab, setActiveTab] = useState<'settings' | 'result'>('settings');
   const [isDarkBg, setIsDarkBg] = useState(false);
   const [selectedTextColor, setSelectedTextColor] = useState<string>('');
+  
+  // SaaS Context state
+  const [saasContext, setSaasContext] = useState<any>(null);
+
+  useEffect(() => {
+    // 1. Handle postMessage initialization
+    const handleSaasMessage = (event: MessageEvent) => {
+      if (event.data?.type === 'SAAS_INIT') {
+        const context = event.data;
+        setSaasContext(context);
+        (window as any).SAAS_CONTEXT = context;
+        console.log('SaaS Initialized via message:', context);
+        
+        // Optionally launch tool on SaaS side
+        fetch('/api/tool/launch', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ userId: context.userId, toolId: context.toolId })
+        }).catch(err => console.error('Launch error:', err));
+      }
+    };
+
+    window.addEventListener('message', handleSaasMessage);
+
+    // 2. Fallback to URL params
+    const params = new URLSearchParams(window.location.search);
+    const userId = params.get('userId');
+    const toolId = params.get('toolId');
+    if (userId && toolId && !saasContext) {
+      const context = { userId, toolId };
+      setSaasContext(context);
+      (window as any).SAAS_CONTEXT = context;
+      console.log('SaaS Context from URL:', context);
+    }
+
+    return () => window.removeEventListener('message', handleSaasMessage);
+  }, [saasContext]);
 
   const currentTextColor = selectedTextColor ? selectedTextColor : (isDarkBg ? 'text-white' : 'text-slate-800');
   const generatedImageUrl = generatedImages[selectedImageIndex] || null;
@@ -133,44 +154,37 @@ export default function App() {
     }
   }, [generatedImageUrl]);
 
-  // SaaS State
-  const [saasInfo, setSaasInfo] = useState<{ userId?: string; toolId?: string }>({});
-
-  useEffect(() => {
-    // 1. Get from URL params initially
-    const params = new URLSearchParams(window.location.search);
-    const userId = params.get('userId');
-    const toolId = params.get('toolId');
-    if (userId && toolId) {
-      setSaasInfo({ userId, toolId });
-    }
-
-    // 2. Listen for postMessage
-    const handleMessage = (event: MessageEvent) => {
-      if (event.data?.type === 'SAAS_INIT') {
-        setSaasInfo({ 
-          userId: event.data.userId, 
-          toolId: event.data.toolId 
-        });
-        console.log('SaaS Initialized:', event.data);
-      }
-    };
-
-    window.addEventListener('message', handleMessage);
-    return () => window.removeEventListener('message', handleMessage);
-  }, []);
-
-  useEffect(() => {
-    if (saasInfo.userId && saasInfo.toolId) {
-      fetch('/api/tool/launch', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId: saasInfo.userId, toolId: saasInfo.toolId })
-      }).catch(err => console.error('Launch failed:', err));
-    }
-  }, [saasInfo]);
-
   // Handlers
+  const fetchHistory = async () => {
+    if (!saasContext) return;
+    try {
+      const { userId, role } = saasContext;
+      const res = await fetch(`/api/upload/image?userId=${userId}&role=${role || 1}`);
+      const result = await res.json();
+      if (result.success && result.data) {
+        // Map SaaS image data to match GeneratedItem interface
+        const mappedHistory: GeneratedItem[] = result.data.map((img: any) => ({
+          id: img.id,
+          originalImage: '', // original image is not stored in SaaS as per princple 0
+          generatedImage: img.url,
+          title: img.fileName.split('/').pop()?.split('_').pop() || 'AI海报',
+          sellingPoints: [],
+          style: '',
+          ratio: '1:1',
+          resolution: '1K',
+          timestamp: new Date(img.createdAt).toLocaleTimeString(),
+        }));
+        setHistory(mappedHistory);
+      }
+    } catch (err) {
+      console.error('Failed to fetch history:', err);
+    }
+  };
+
+  useEffect(() => {
+    fetchHistory();
+  }, [saasContext]);
+
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
@@ -231,69 +245,60 @@ export default function App() {
 
   const handleGenerate = async () => {
     if (!originalImage) return;
-    const userId = saasInfo.userId || 'test_user';
-    const toolId = saasInfo.toolId || 'test_tool';
-
     setIsGenerating(true);
     setActiveTab('result');
     setGeneratedImages([]);
     setSelectedImageIndex(0);
 
     try {
-      // 1. Analyze product via server (SaaS verify & consume inside)
-      const analysisData = await readJson(await fetch('/api/analyze', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId, toolId, image: originalImage })
-      }));
-      
+      const analysisResult = await analyzeProduct(originalImage);
       const newAnalysis: AnalysisResultExtended = {
-        title: analysisData.title || '精美产品',
-        sellingPoints: (analysisData.sellingPoints || []).map((sp: string) => ({
+        title: analysisResult.title || '精美产品',
+        sellingPoints: (analysisResult.sellingPoints || []).map(sp => ({
           id: Math.random().toString(36).substr(2, 9),
           text: sp
         })),
-        footer: analysisData.footer || '',
+        footer: analysisResult.footer || '',
       };
       setAnalysis(newAnalysis);
 
-      // 2. Generate images via server
+      // Generate images sequentially
       const perspectives = [
-        "The product stands upright, shot from a top-left diagonal 45-degree high angle perspective.",
-        "The product is tilted at a 45-degree angle, frontal eye-level cinematic shot.",
-        "A bird's-eye view flat-lay shot, the product is centered and lying flat."
+        "The product stands upright, shot from a top-left diagonal 45-degree high angle perspective. Ensure it integrates perfectly with the background environment.",
+        "The product is tilted at a 45-degree angle, frontal eye-level cinematic shot. Ensure realistic lighting and contact shadows.",
+        "A bird's-eye view flat-lay shot, the product is centered and lying completely flat on the surface of the environment."
       ];
 
       for (let i = 0; i < perspectives.length; i++) {
         setGenerationStep(i + 1);
-        try {
-          const genData = await readJson(await fetch('/api/generate', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              userId,
-              toolId,
+          try {
+            const url = await generateEcomBackground(
+              selectedStyle.prompt,
+              '',
+              '',
+              selectedRatio as any,
+              selectedResolution as any,
               originalImage,
-              style: selectedStyle.prompt,
-              ratio: selectedRatio,
-              resolution: selectedResolution,
-              perspective: perspectives[i]
-            })
-          }));
-
-          const url = genData.url;
-          const itemAnalysis = { ...newAnalysis };
-          setGeneratedImages(prev => [...prev, url]);
-          setSelectedImageIndex(i);
-          saveToHistory(wrapHistoryItem(url, itemAnalysis));
-        } catch (imgError: any) {
+              perspectives[i]
+            );
+            
+            const itemAnalysis = { ...newAnalysis };
+            setAnalysis(itemAnalysis);
+            setGeneratedImages(prev => [...prev, url]);
+            setSelectedImageIndex(i); // Update to show latest image
+            saveToHistory(wrapHistoryItem(url, itemAnalysis));
+          } catch (imgError) {
           console.error(`Perspective ${i + 1} generation failed:`, imgError);
         }
       }
 
-    } catch (error: any) {
+      if (generatedImages.length === 0 && !isGenerating) {
+        // This means ALL failed if we get here and it was empty
+      }
+
+    } catch (error) {
       console.error('Core generation logic failed:', error);
-      alert(`生成失败: ${error.message}`);
+      alert('生成过程出现异常，请检查网络或图片大小后重试');
     } finally {
       setIsGenerating(false);
     }
@@ -322,36 +327,23 @@ export default function App() {
     }
   };
 
-  const saveToSaaS = async () => {
-    if (!resultContainerRef.current) return;
-    if (!saasInfo.userId || !saasInfo.toolId) {
-      alert('未检测到用户身份，无法保存');
-      return;
-    }
-    try {
-      const dataUrl = await htmlToImage.toPng(resultContainerRef.current, { 
-        cacheBust: true,
-        pixelRatio: 1.5
-      });
-      const data = await readJson(await fetch('/api/save-composed', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          userId: saasInfo.userId,
-          toolId: saasInfo.toolId,
-          image: dataUrl
-        })
-      }));
-      alert('已成功保存到 SaaS 平台「我的图片」');
-    } catch (err: any) {
-      console.error('Save to SaaS failed:', err);
-      alert(`保存失败: ${err.message}`);
-    }
-  };
-
-  const removeFromHistory = (id: string, e: React.MouseEvent) => {
+  const removeFromHistory = async (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
-    setHistory(prev => prev.filter(item => item.id !== id));
+    if (!saasContext) return;
+    try {
+      const { userId, role } = saasContext;
+      const res = await fetch('/api/upload/image', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id, userId, role: role || 1 })
+      });
+      const result = await res.json();
+      if (result.success) {
+        setHistory(prev => prev.filter(item => item.id !== id));
+      }
+    } catch (err) {
+      console.error('Failed to delete image:', err);
+    }
   };
 
   const selectHistoryItem = (item: GeneratedItem) => {
@@ -570,10 +562,6 @@ export default function App() {
                             </div>
                           </div>
                           <div className="absolute top-6 right-6 z-30 opacity-0 group-hover:opacity-100 transition-opacity flex gap-2">
-                             <button onClick={saveToSaaS} className="p-4 bg-white/90 hover:bg-white text-orange-500 rounded-full shadow-xl flex items-center gap-2" title="保存到我的图片">
-                               <Check className="w-6 h-6" />
-                               <span className="text-xs font-bold mr-1">保存到作品集</span>
-                             </button>
                              <button onClick={downloadImage} className="p-4 bg-white/90 hover:bg-white text-slate-800 rounded-full shadow-xl" title="下载海报"><Download className="w-6 h-6" /></button>
                           </div>
                         </div>

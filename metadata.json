@@ -2,5 +2,7 @@
   "name": "Serum AI E-com Generator",
   "description": "One-click e-commerce product image generator for serums with AI-powered background beautification and text overlays.",
   "requestFramePermissions": [],
-  "majorCapabilities": []
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
 }
