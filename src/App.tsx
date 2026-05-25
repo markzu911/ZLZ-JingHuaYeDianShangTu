@@ -217,9 +217,9 @@ export default function App() {
   const fetchHistory = async () => {
     if (!saasContext) return;
     try {
-      const { userId, role } = saasContext;
+      const { userId, role, toolId } = saasContext;
       const res = await fetch(
-        `/api/upload/image?userId=${userId}&role=${role || 1}`,
+        `/api/upload/image?userId=${userId}&role=${role || 1}&toolId=${toolId || ""}`,
       );
       const result = await res.json();
       if (result.success && result.data) {
@@ -354,9 +354,9 @@ export default function App() {
 
           // Refresh history from SaaS
           try {
-            const { userId, role } = saasContext;
+            const { userId, role, toolId } = saasContext;
             const res = await fetch(
-              `/api/upload/image?userId=${userId}&role=${role || 1}`,
+              `/api/upload/image?userId=${userId}&role=${role || 1}&toolId=${toolId || ""}`,
             );
             const result = await res.json();
 
@@ -476,35 +476,51 @@ export default function App() {
 
   return (
     <div className="flex flex-col h-screen w-full bg-[#f8f9fa] text-slate-800 font-sans overflow-hidden">
-      {/* Header / Tabs */}
-      <div className="px-8 pt-6 flex justify-between items-end border-b border-slate-200 bg-white shadow-sm z-10 shrink-0">
-        <div className="flex gap-8">
+      {/* Header */}
+      <div className="px-6 py-4 flex justify-between items-center bg-white shadow-sm z-10 shrink-0 border-b border-slate-100">
+        <div className="flex items-center gap-3 w-[250px]">
+          <div className="w-10 h-10 bg-slate-900 rounded-xl flex items-center justify-center text-white font-bold text-lg">
+            香
+          </div>
+          <div>
+            <h1 className="font-bold text-slate-800 text-base leading-tight">香水电商图</h1>
+            <p className="text-[10px] text-slate-500">智能生成工具</p>
+          </div>
+        </div>
+
+        {/* Center Tabs */}
+        <div className="flex bg-slate-100 p-1 rounded-lg">
           <button
             onClick={() => setActiveTab("settings")}
-            className={`pb-4 text-base font-semibold relative transition-colors ${activeTab === "settings" ? "text-slate-900 border-b-2 border-orange-500" : "text-slate-400 hover:text-slate-600"}`}
+            className={`px-6 py-1.5 text-sm font-semibold rounded-md transition-all ${
+              activeTab === "settings"
+                ? "bg-white text-slate-800 shadow-sm"
+                : "text-slate-500 hover:text-slate-700"
+            }`}
           >
             第一步：上传与参数设置
           </button>
           <button
             onClick={() => setActiveTab("result")}
-            className={`pb-4 text-base font-semibold relative transition-colors ${activeTab === "result" ? "text-slate-900 border-b-2 border-orange-500" : "text-slate-400 hover:text-slate-600"}`}
+            className={`px-6 py-1.5 text-sm font-semibold rounded-md transition-all ${
+              activeTab === "result"
+                ? "bg-white text-slate-800 shadow-sm"
+                : "text-slate-500 hover:text-slate-700"
+            }`}
           >
             第二步：生成结果与修改
           </button>
         </div>
         
         {/* User Info / Points */}
-        {saasContext && (
-          <div className="flex items-center gap-1.5 pb-4 text-sm font-medium text-slate-600">
-            <Coins className="w-4 h-4 text-orange-500" />
-            <span>
-              剩余积分:{" "}
-              <span className="text-orange-600 font-bold ml-0.5">
-                {userIntegral ?? saasContext.integral ?? 0}
-              </span>
-            </span>
-          </div>
-        )}
+        <div className="w-[250px] flex justify-end">
+          {saasContext && (
+            <div className="flex items-center gap-1.5 px-4 py-1.5 rounded-full bg-orange-50 text-sm font-medium text-orange-600 border border-orange-100">
+              <Sparkles className="w-4 h-4" />
+              <span>积分: <span className="font-bold">{userIntegral ?? saasContext.integral ?? 0}</span></span>
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Content area */}
@@ -519,12 +535,12 @@ export default function App() {
               className="h-full max-w-[1400px] mx-auto flex flex-col lg:flex-row gap-8"
             >
               {/* STEP 1 - LEFT: Upload */}
-              <div className="w-full lg:w-[450px] shrink-0 h-full">
-                <div className="bg-white rounded-3xl p-6 border border-slate-200 shadow-sm h-full flex flex-col items-center">
-                  <div className="flex items-center gap-2 w-full mb-4 shrink-0">
-                    <h3 className="font-semibold text-slate-700">产品图片</h3>
+              <div className="flex-1 shrink-0 flex justify-center mt-2 lg:mt-6">
+                <div className="bg-white rounded-[2rem] p-6 lg:p-8 border border-slate-200 shadow-sm w-full max-w-[700px] aspect-[16/9] lg:aspect-auto lg:h-[480px] max-h-[500px] flex flex-col items-center">
+                  <div className="w-full text-left mb-6 shrink-0">
+                    <h3 className="font-bold text-lg text-slate-800">产品图片</h3>
                   </div>
-                  <div className="relative w-full flex-1 rounded-2xl bg-slate-50 border-2 border-dashed border-slate-200 hover:border-orange-300 hover:bg-orange-50 transition-all group overflow-hidden">
+                  <div className="relative w-full flex-1 rounded-3xl bg-white border-2 border-dashed border-slate-200 hover:border-slate-300 transition-all group overflow-hidden bg-clip-padding">
                     {originalImage ? (
                       <>
                         <img
@@ -535,9 +551,7 @@ export default function App() {
                         <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-all cursor-pointer">
                           <label className="cursor-pointer text-white flex flex-col items-center gap-2 h-full w-full justify-center">
                             <RefreshCw className="w-8 h-8" />
-                            <span className="text-sm font-medium">
-                              重传图片
-                            </span>
+                            <span className="text-sm font-medium">重传图片</span>
                             <input
                               type="file"
                               accept="image/*"
@@ -548,15 +562,13 @@ export default function App() {
                         </div>
                       </>
                     ) : (
-                      <label className="h-full w-full flex flex-col items-center justify-center gap-3 cursor-pointer">
-                        <div className="w-12 h-12 rounded-full bg-white shadow-sm flex items-center justify-center">
-                          <Upload className="w-6 h-6 text-orange-500" />
+                      <label className="h-full w-full flex flex-col items-center justify-center gap-4 cursor-pointer">
+                        <div className="w-14 h-14 rounded-full bg-white shadow-sm flex items-center justify-center border border-slate-100">
+                          <Upload className="w-7 h-7 text-slate-800" />
                         </div>
                         <div className="text-center px-4">
-                          <p className="text-sm font-medium">点击上传产品图</p>
-                          <p className="text-xs text-slate-400 mt-1">
-                            支持 JPG, PNG, WEBP
-                          </p>
+                          <p className="text-base font-bold text-slate-800">上传香水实拍图</p>
+                          <p className="text-xs text-slate-400 mt-1">推荐纯色背景环境</p>
                         </div>
                         <input
                           type="file"
@@ -571,53 +583,58 @@ export default function App() {
               </div>
 
               {/* STEP 1 - RIGHT: Settings */}
-              <div className="flex-1 space-y-6 overflow-y-auto pb-6">
-                <div className="bg-white rounded-3xl p-8 border border-slate-200 shadow-sm space-y-4">
-                  <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
-                    整体视觉风格
-                  </label>
-                  <div className="flex flex-wrap gap-3">
-                    {STYLES.map((style) => (
-                      <button
-                        key={style.id}
-                        onClick={() => setSelectedStyle(style)}
-                        className={`px-6 py-3 rounded-xl text-sm font-medium border-2 transition-all ${selectedStyle.id === style.id ? "bg-orange-50 border-orange-500 text-orange-600 shadow-sm" : "bg-white border-slate-100 text-slate-600 hover:border-orange-200 hover:bg-orange-50"}`}
-                      >
-                        {style.name}
-                      </button>
-                    ))}
+              <div className="w-full lg:w-[420px] shrink-0 h-full overflow-y-auto pb-4">
+                <div className="bg-white rounded-[2rem] p-8 border border-slate-200 shadow-sm flex flex-col min-h-max space-y-8">
+                  {/* Style Settings */}
+                  <div className="space-y-4 pt-2">
+                    <div className="flex items-center gap-2">
+                      <Sparkles className="w-4 h-4 text-[#7B61FF]" />
+                      <label className="text-sm font-bold text-slate-800">画面风格选择</label>
+                    </div>
+                    <div className="grid grid-cols-2 gap-3">
+                      {STYLES.map((style) => (
+                        <button
+                          key={style.id}
+                          onClick={() => setSelectedStyle(style)}
+                          className={`py-3 flex items-center justify-center rounded-xl text-sm font-bold border transition-all gap-2 ${selectedStyle.id === style.id ? "bg-slate-900 border-slate-900 text-white shadow-sm" : "bg-slate-50 border-transparent text-slate-600 hover:border-slate-200"}`}
+                        >
+                          <ImageIcon className={`w-4 h-4 ${selectedStyle.id === style.id ? 'opacity-100' : 'opacity-40'}`} />
+                          {style.name}
+                        </button>
+                      ))}
+                    </div>
                   </div>
-                </div>
 
-                <div className="bg-white rounded-3xl p-8 border border-slate-200 shadow-sm space-y-4">
-                  <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
-                    视角选择
-                  </label>
-                  <div className="flex flex-wrap gap-3">
-                    {PERSPECTIVES.map((perspective) => (
-                      <button
-                        key={perspective.id}
-                        onClick={() => setSelectedPerspective(perspective)}
-                        className={`px-6 py-3 rounded-xl text-sm font-medium border-2 transition-all ${selectedPerspective.id === perspective.id ? "bg-orange-50 border-orange-500 text-orange-600 shadow-sm" : "bg-white border-slate-100 text-slate-600 hover:border-orange-200 hover:bg-orange-50"}`}
-                      >
-                        {perspective.name}
-                      </button>
-                    ))}
+                  {/* Perspective Settings */}
+                  <div className="space-y-4">
+                    <label className="text-xs font-bold text-slate-400 block">
+                      拍摄视角
+                    </label>
+                    <div className="flex gap-2">
+                      {PERSPECTIVES.map((perspective) => (
+                        <button
+                          key={perspective.id}
+                          onClick={() => setSelectedPerspective(perspective)}
+                          className={`flex-1 py-3 rounded-xl text-xs font-bold border transition-all ${selectedPerspective.id === perspective.id ? "bg-slate-900 border-slate-900 text-white shadow-sm" : "bg-slate-50 border-transparent text-slate-500 hover:border-slate-200"}`}
+                        >
+                          {perspective.name}
+                        </button>
+                      ))}
+                    </div>
                   </div>
-                </div>
 
-                <div className="bg-white rounded-3xl p-8 border border-slate-200 shadow-sm space-y-8">
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                  {/* Ratio & Resolution */}
+                  <div className="flex flex-col gap-6">
                     <div className="space-y-4">
-                      <label className="text-xs font-semibold text-slate-500 block">
-                        画布比例
+                      <label className="text-xs font-bold text-slate-400 block">
+                        画幅比例
                       </label>
                       <div className="flex gap-2">
                         {RATIOS.map((ratio) => (
                           <button
                             key={ratio}
                             onClick={() => setSelectedRatio(ratio)}
-                            className={`flex-1 py-3 rounded-xl border-2 font-bold transition-colors ${selectedRatio === ratio ? "bg-slate-900 border-slate-900 text-white" : "bg-slate-50 border-slate-100 text-slate-500 hover:border-slate-300"}`}
+                            className={`flex-1 py-3 rounded-xl text-xs font-bold transition-all border ${selectedRatio === ratio ? "bg-slate-900 border-slate-900 text-white shadow-sm" : "bg-slate-50 border-transparent text-slate-500 hover:border-slate-200"}`}
                           >
                             {ratio}
                           </button>
@@ -625,7 +642,7 @@ export default function App() {
                       </div>
                     </div>
                     <div className="space-y-4">
-                      <label className="text-xs font-semibold text-slate-500 block">
+                      <label className="text-xs font-bold text-slate-400 block">
                         输出分辨率
                       </label>
                       <div className="flex gap-2">
@@ -633,7 +650,7 @@ export default function App() {
                           <button
                             key={res}
                             onClick={() => setSelectedResolution(res)}
-                            className={`flex-1 py-3 rounded-xl border-2 font-bold transition-colors ${selectedResolution === res ? "bg-slate-900 border-slate-900 text-white" : "bg-slate-50 border-slate-100 text-slate-500 hover:border-slate-300"}`}
+                            className={`flex-1 py-3 rounded-xl text-xs font-bold transition-all border ${selectedResolution === res ? "bg-slate-900 border-slate-900 text-white shadow-sm" : "bg-slate-50 border-transparent text-slate-500 hover:border-slate-200"}`}
                           >
                             {res}
                           </button>
@@ -641,13 +658,21 @@ export default function App() {
                       </div>
                     </div>
                   </div>
-                  <button
-                    onClick={handleGenerate}
-                    className="w-full py-5 rounded-2xl font-bold text-lg bg-orange-500 text-white hover:bg-orange-600 shadow-[0_4px_14px_0_rgba(249,115,22,0.39)] transition-all flex items-center justify-center gap-3"
-                  >
-                    <Sparkles className="w-6 h-6" />
-                    开始生成商品图
-                  </button>
+
+                  <div className="mt-8 pt-4">
+                    <button
+                      onClick={handleGenerate}
+                      disabled={!originalImage || isGenerating}
+                      className={`w-full py-4 rounded-xl font-bold text-base transition-all flex items-center justify-center gap-2 ${
+                        originalImage && !isGenerating 
+                          ? 'bg-slate-900 text-white hover:bg-slate-800 shadow-sm' 
+                          : 'bg-[#cfcfcf] text-white cursor-not-allowed'
+                      }`}
+                      style={{ backgroundColor: originalImage && !isGenerating ? undefined : '#b5b5b5' }}
+                    >
+                      <Sparkles className="w-5 h-5" /> 生成商品图
+                    </button>
+                  </div>
                 </div>
               </div>
             </motion.div>
@@ -881,8 +906,8 @@ export default function App() {
                 </div>
 
                 {/* STEP 2 - RIGHT: Editing Controls */}
-                <div className="w-full lg:w-[450px] shrink-0 h-full">
-                  <div className="bg-white rounded-3xl p-6 lg:p-8 border border-slate-200 shadow-sm h-full flex flex-col gap-6 overflow-y-auto">
+                <div className="w-full lg:w-[420px] shrink-0 h-full">
+                  <div className="bg-white rounded-[2rem] p-6 lg:p-8 border border-slate-200 shadow-sm h-full flex flex-col gap-6 overflow-y-auto">
                     {generatedImages.length > 0 && !isGenerating ? (
                       <>
                         <div className="flex items-center gap-2 font-bold text-lg shrink-0">
