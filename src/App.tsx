@@ -3,23 +3,28 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useEffect, useRef } from 'react';
-import { 
-  Upload, 
-  Sparkles, 
-  Download, 
-  Image as ImageIcon, 
-  Trash2, 
+import React, { useState, useEffect, useRef, useCallback } from "react";
+import {
+  Upload,
+  Sparkles,
+  Download,
+  Image as ImageIcon,
+  Trash2,
   History,
   Check,
   ChevronRight,
   Maximize2,
   RefreshCw,
-  Monitor
-} from 'lucide-react';
-import { motion, AnimatePresence } from 'motion/react';
-import { analyzeProduct, generateEcomBackground, AnalysisResult } from './lib/gemini.ts';
-import * as htmlToImage from 'html-to-image';
+  Monitor,
+  Coins,
+} from "lucide-react";
+import { motion, AnimatePresence } from "motion/react";
+import {
+  analyzeProduct,
+  generateEcomBackground,
+  AnalysisResult,
+} from "./lib/gemini.ts";
+import * as htmlToImage from "html-to-image";
 
 interface SellingPoint {
   id: string;
@@ -46,86 +51,140 @@ interface GeneratedItem {
 }
 
 const STYLES = [
-  { 
-    id: 'high-tech', 
-    name: '高端科技', 
-    prompt: 'Replica of premium scientific aesthetic: A futuristic precision robotic metal arm or technical tweezers centrally holding the product. The background consists of elegant flowing golden liquid ribbons and waves with integrated digital glowing particle grids and luminous micro-points. Use soft golden cinematic lighting. IDENTIFY THE PRODUCT IN THE ATTACHED IMAGE AND REPLACE THE SUBJECT IN THIS SCENE WITH IT. Keep the robotic arm and golden wave environment exactly as described while seamlessly integrating the product.' 
+  {
+    id: "high-tech",
+    name: "高端科技",
+    prompt:
+      "Replica of premium scientific aesthetic: A futuristic precision robotic metal arm or technical tweezers centrally holding the product. The background consists of elegant flowing golden liquid ribbons and waves with integrated digital glowing particle grids and luminous micro-points. Use soft golden cinematic lighting. IDENTIFY THE PRODUCT IN THE ATTACHED IMAGE AND REPLACE THE SUBJECT IN THIS SCENE WITH IT. Keep the robotic arm and golden wave environment exactly as described while seamlessly integrating the product.",
   },
-  { 
-    id: 'luxury', 
-    name: '轻奢黄金', 
-    prompt: 'Premium luxury gold aesthetic: The background features sparkling, shimmering golden sand and fine glitter. A smooth, glossy wave of molten liquid gold flows gracefully at one edge. Several elegant metallic golden leaves with distinct veins are scattered around. The scene is illuminated with dramatic, magical lighting including bright glowing sparkles, subtle lens flares, and soft bokeh. IDENTIFY THE UPLOADED PRODUCT AND INTEGRATE IT INTO THIS SHIMMERING GOLDEN ENVIRONMENT as the main subject. Ensure realistic lighting, shadows, and reflections. Do not alter the original product design.' 
+  {
+    id: "luxury",
+    name: "轻奢黄金",
+    prompt:
+      "Premium luxury gold aesthetic: The background features sparkling, shimmering golden sand and fine glitter. A smooth, glossy wave of molten liquid gold flows gracefully at one edge. Several elegant metallic golden leaves with distinct veins are scattered around. The scene is illuminated with dramatic, magical lighting including bright glowing sparkles, subtle lens flares, and soft bokeh. IDENTIFY THE UPLOADED PRODUCT AND INTEGRATE IT INTO THIS SHIMMERING GOLDEN ENVIRONMENT as the main subject. Ensure realistic lighting, shadows, and reflections. Do not alter the original product design.",
   },
 ];
 
 const TEXT_COLORS = [
-  { id: '', name: '自动' },
-  { id: 'text-slate-800 drop-shadow-sm', name: '简约黑' },
-  { id: 'text-white drop-shadow-md', name: '纯净白' },
-  { id: 'text-[#facc15] drop-shadow-md', name: '日光黄' },
-  { id: 'bg-gradient-to-b from-yellow-100 via-yellow-400 to-yellow-600 bg-clip-text text-transparent drop-shadow-[0_3px_6px_rgba(0,0,0,0.4)]', name: '黄金渐变' },
-  { id: 'bg-gradient-to-b from-slate-100 via-slate-300 to-slate-500 bg-clip-text text-transparent drop-shadow-[0_2px_5px_rgba(0,0,0,0.3)]', name: '白银渐变' },
-  { id: 'bg-gradient-to-r from-rose-200 via-rose-400 to-rose-600 bg-clip-text text-transparent drop-shadow-[0_2px_5px_rgba(0,0,0,0.3)]', name: '玫瑰渐变' },
+  { id: "", name: "自动" },
+  { id: "text-slate-800 drop-shadow-sm", name: "简约黑" },
+  { id: "text-white drop-shadow-md", name: "纯净白" },
+  { id: "text-[#facc15] drop-shadow-md", name: "日光黄" },
+  {
+    id: "bg-gradient-to-b from-yellow-100 via-yellow-400 to-yellow-600 bg-clip-text text-transparent drop-shadow-[0_3px_6px_rgba(0,0,0,0.4)]",
+    name: "黄金渐变",
+  },
+  {
+    id: "bg-gradient-to-b from-slate-100 via-slate-300 to-slate-500 bg-clip-text text-transparent drop-shadow-[0_2px_5px_rgba(0,0,0,0.3)]",
+    name: "白银渐变",
+  },
+  {
+    id: "bg-gradient-to-r from-rose-200 via-rose-400 to-rose-600 bg-clip-text text-transparent drop-shadow-[0_2px_5px_rgba(0,0,0,0.3)]",
+    name: "玫瑰渐变",
+  },
 ];
 
-const RATIOS = ['1:1', '3:4', '4:3', '16:9'];
-const RESOLUTIONS = ['1K', '2K', '4K'];
+const PERSPECTIVES = [
+  {
+    id: "top-left",
+    name: "俯视高位",
+    prompt:
+      "The product stands upright, shot from a top-left diagonal 45-degree high angle perspective. Ensure it integrates perfectly with the background environment.",
+  },
+  {
+    id: "frontal",
+    name: "平视正面",
+    prompt:
+      "The product is tilted at a 45-degree angle, frontal eye-level cinematic shot. Ensure realistic lighting and contact shadows.",
+  },
+  {
+    id: "flat-lay",
+    name: "平躺俯拍",
+    prompt:
+      "A bird's-eye view flat-lay shot, the product is centered and lying completely flat on the surface of the environment.",
+  },
+];
+
+const RATIOS = ["1:1", "3:4", "4:3", "16:9"];
+const RESOLUTIONS = ["1K", "2K", "4K"];
 
 export default function App() {
   // State
   const [originalImage, setOriginalImage] = useState<string | null>(null);
-  const [analysis, setAnalysis] = useState<AnalysisResultExtended>({ title: '', sellingPoints: [] });
-  const [generationStep, setGenerationStep] = useState(0);
+  const [analysis, setAnalysis] = useState<AnalysisResultExtended>({
+    title: "",
+    sellingPoints: [],
+  });
   const [selectedStyle, setSelectedStyle] = useState(STYLES[0]);
-  const [selectedRatio, setSelectedRatio] = useState('1:1');
-  const [selectedResolution, setSelectedResolution] = useState('1K');
-  const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [selectedPerspective, setSelectedPerspective] = useState(
+    PERSPECTIVES[0],
+  );
+  const [selectedRatio, setSelectedRatio] = useState("1:1");
+  const [selectedResolution, setSelectedResolution] = useState("1K");
   const [isGenerating, setIsGenerating] = useState(false);
   const [generatedImages, setGeneratedImages] = useState<string[]>([]);
   const [selectedImageIndex, setSelectedImageIndex] = useState(0);
   const [history, setHistory] = useState<GeneratedItem[]>([]);
-  const [activeTab, setActiveTab] = useState<'settings' | 'result'>('settings');
+  const [activeTab, setActiveTab] = useState<"settings" | "result">("settings");
   const [isDarkBg, setIsDarkBg] = useState(false);
-  const [selectedTextColor, setSelectedTextColor] = useState<string>('');
-  
+  const [selectedTextColor, setSelectedTextColor] = useState<string>("");
+
   // SaaS Context state
   const [saasContext, setSaasContext] = useState<any>(null);
+  const [userIntegral, setUserIntegral] = useState<number | null>(null);
+
+  const initSaas = useCallback(async (context: any) => {
+    setSaasContext(context);
+    (window as any).SAAS_CONTEXT = context;
+    try {
+      const res = await fetch("/api/tool/launch", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          userId: context.userId,
+          toolId: context.toolId,
+        }),
+      });
+      const data = await res.json();
+      if (data.success && data.data?.user?.integral !== undefined) {
+        setUserIntegral(data.data.user.integral);
+        setSaasContext((prev: any) => ({ ...prev, ...data.data.user }));
+      }
+    } catch (err) {
+      console.error("Launch error:", err);
+    }
+  }, []);
 
   useEffect(() => {
     // 1. Handle postMessage initialization
     const handleSaasMessage = (event: MessageEvent) => {
-      if (event.data?.type === 'SAAS_INIT') {
-        const context = event.data;
-        setSaasContext(context);
-        (window as any).SAAS_CONTEXT = context;
-        console.log('SaaS Initialized via message:', context);
-        
-        // Optionally launch tool on SaaS side
-        fetch('/api/tool/launch', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ userId: context.userId, toolId: context.toolId })
-        }).catch(err => console.error('Launch error:', err));
+      if (event.data?.type === "SAAS_INIT") {
+        console.log("SaaS Initialized via message:", event.data);
+        initSaas(event.data);
       }
     };
 
-    window.addEventListener('message', handleSaasMessage);
+    window.addEventListener("message", handleSaasMessage);
 
     // 2. Fallback to URL params
     const params = new URLSearchParams(window.location.search);
-    const userId = params.get('userId');
-    const toolId = params.get('toolId');
+    const userId = params.get("userId");
+    const toolId = params.get("toolId");
     if (userId && toolId && !saasContext) {
       const context = { userId, toolId };
-      setSaasContext(context);
-      (window as any).SAAS_CONTEXT = context;
-      console.log('SaaS Context from URL:', context);
+      console.log("SaaS Context from URL:", context);
+      initSaas(context);
     }
 
-    return () => window.removeEventListener('message', handleSaasMessage);
-  }, [saasContext]);
+    return () => window.removeEventListener("message", handleSaasMessage);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
-  const currentTextColor = selectedTextColor ? selectedTextColor : (isDarkBg ? 'text-white' : 'text-slate-800');
+  const currentTextColor = selectedTextColor
+    ? selectedTextColor
+    : isDarkBg
+      ? "text-white"
+      : "text-slate-800";
   const generatedImageUrl = generatedImages[selectedImageIndex] || null;
 
   const resultContainerRef = useRef<HTMLDivElement>(null);
@@ -133,18 +192,18 @@ export default function App() {
   useEffect(() => {
     if (generatedImageUrl) {
       const img = new Image();
-      img.crossOrigin = 'anonymous';
+      img.crossOrigin = "anonymous";
       img.onload = () => {
-        const c = document.createElement('canvas');
+        const c = document.createElement("canvas");
         c.width = 100;
         c.height = 100;
-        const ctx = c.getContext('2d');
+        const ctx = c.getContext("2d");
         if (ctx) {
           ctx.drawImage(img, 0, 0, 100, 100);
           const data = ctx.getImageData(0, 0, 100, 100).data;
           let brightness = 0;
           for (let i = 0; i < data.length; i += 4) {
-            brightness += (data[i] + data[i+1] + data[i+2]) / 3;
+            brightness += (data[i] + data[i + 1] + data[i + 2]) / 3;
           }
           brightness = brightness / (100 * 100);
           setIsDarkBg(brightness < 128);
@@ -159,25 +218,27 @@ export default function App() {
     if (!saasContext) return;
     try {
       const { userId, role } = saasContext;
-      const res = await fetch(`/api/upload/image?userId=${userId}&role=${role || 1}`);
+      const res = await fetch(
+        `/api/upload/image?userId=${userId}&role=${role || 1}`,
+      );
       const result = await res.json();
       if (result.success && result.data) {
         // Map SaaS image data to match GeneratedItem interface
         const mappedHistory: GeneratedItem[] = result.data.map((img: any) => ({
           id: img.id,
-          originalImage: '', // original image is not stored in SaaS as per princple 0
+          originalImage: "", // original image is not stored in SaaS as per princple 0
           generatedImage: img.url,
-          title: img.fileName.split('/').pop()?.split('_').pop() || 'AI海报',
+          title: img.fileName.split("/").pop()?.split("_").pop() || "AI海报",
           sellingPoints: [],
-          style: '',
-          ratio: '1:1',
-          resolution: '1K',
+          style: "",
+          ratio: "1:1",
+          resolution: "1K",
           timestamp: new Date(img.createdAt).toLocaleTimeString(),
         }));
         setHistory(mappedHistory);
       }
     } catch (err) {
-      console.error('Failed to fetch history:', err);
+      console.error("Failed to fetch history:", err);
     }
   };
 
@@ -192,18 +253,21 @@ export default function App() {
       reader.onload = (event) => {
         setOriginalImage(event.target?.result as string);
         setGeneratedImages([]);
-        setAnalysis({ title: '', sellingPoints: [] });
-        setActiveTab('settings');
+        setAnalysis({ title: "", sellingPoints: [] });
+        setActiveTab("settings");
       };
       reader.readAsDataURL(file);
     }
   };
 
   const saveToHistory = (item: GeneratedItem) => {
-    setHistory(prev => [item, ...prev].slice(0, 30));
+    setHistory((prev) => [item, ...prev].slice(0, 30));
   };
 
-  const wrapHistoryItem = (image: string, itemAnalysis: AnalysisResultExtended) => {
+  const wrapHistoryItem = (
+    image: string,
+    itemAnalysis: AnalysisResultExtended,
+  ) => {
     return {
       id: Math.random().toString(36).substr(2, 9),
       originalImage: originalImage!,
@@ -221,129 +285,127 @@ export default function App() {
   const addSellingPoint = () => {
     const newPoint: SellingPoint = {
       id: Math.random().toString(36).substr(2, 9),
-      text: '新核心卖点'
+      text: "新核心卖点",
     };
-    setAnalysis(prev => ({
+    setAnalysis((prev) => ({
       ...prev,
-      sellingPoints: [...prev.sellingPoints, newPoint]
+      sellingPoints: [...prev.sellingPoints, newPoint],
     }));
   };
 
   const removeSellingPoint = (id: string) => {
-    setAnalysis(prev => ({
+    setAnalysis((prev) => ({
       ...prev,
-      sellingPoints: prev.sellingPoints.filter(p => p.id !== id)
+      sellingPoints: prev.sellingPoints.filter((p) => p.id !== id),
     }));
   };
 
   const updateSellingPointText = (id: string, text: string) => {
-    setAnalysis(prev => ({
+    setAnalysis((prev) => ({
       ...prev,
-      sellingPoints: prev.sellingPoints.map(p => p.id === id ? { ...p, text } : p)
+      sellingPoints: prev.sellingPoints.map((p) =>
+        p.id === id ? { ...p, text } : p,
+      ),
     }));
   };
 
   const handleGenerate = async () => {
     if (!originalImage) return;
     setIsGenerating(true);
-    setActiveTab('result');
+    setActiveTab("result");
     setGeneratedImages([]);
     setSelectedImageIndex(0);
 
     try {
       const analysisResult = await analyzeProduct(originalImage);
       const newAnalysis: AnalysisResultExtended = {
-        title: analysisResult.title || '精美产品',
-        sellingPoints: (analysisResult.sellingPoints || []).map(sp => ({
+        title: analysisResult.title || "精美产品",
+        sellingPoints: (analysisResult.sellingPoints || []).map((sp) => ({
           id: Math.random().toString(36).substr(2, 9),
-          text: sp
+          text: sp,
         })),
-        footer: analysisResult.footer || '',
+        footer: analysisResult.footer || "",
       };
       setAnalysis(newAnalysis);
 
       // Generate images sequentially
-      const perspectives = [
-        "The product stands upright, shot from a top-left diagonal 45-degree high angle perspective. Ensure it integrates perfectly with the background environment.",
-        "The product is tilted at a 45-degree angle, frontal eye-level cinematic shot. Ensure realistic lighting and contact shadows.",
-        "A bird's-eye view flat-lay shot, the product is centered and lying completely flat on the surface of the environment."
-      ];
+      try {
+        const url = await generateEcomBackground(
+          selectedStyle.prompt,
+          "",
+          "",
+          selectedRatio as any,
+          selectedResolution as any,
+          originalImage,
+          selectedPerspective.prompt,
+        );
 
-      for (let i = 0; i < perspectives.length; i++) {
-        setGenerationStep(i + 1);
+        const itemAnalysis = { ...newAnalysis };
+        setAnalysis(itemAnalysis);
+        setGeneratedImages([url]);
+        setSelectedImageIndex(0); // Update to show latest image
+        saveToHistory(wrapHistoryItem(url, itemAnalysis));
+      } catch (imgError: any) {
+        console.error(`Generation error:`, imgError);
+
+        if (imgError.message === "GENERATION_TIMEOUT_BUT_MAY_HAVE_SAVED") {
+          // Wait 4 seconds for SaaS to finish async processing potentially
+          await new Promise((resolve) => setTimeout(resolve, 4000));
+
+          // Refresh history from SaaS
           try {
-            const url = await generateEcomBackground(
-              selectedStyle.prompt,
-              '',
-              '',
-              selectedRatio as any,
-              selectedResolution as any,
-              originalImage,
-              perspectives[i]
+            const { userId, role } = saasContext;
+            const res = await fetch(
+              `/api/upload/image?userId=${userId}&role=${role || 1}`,
             );
-            
-            const itemAnalysis = { ...newAnalysis };
-            setAnalysis(itemAnalysis);
-            setGeneratedImages(prev => [...prev, url]);
-            setSelectedImageIndex(i); // Update to show latest image
-            saveToHistory(wrapHistoryItem(url, itemAnalysis));
-          } catch (imgError: any) {
-            console.error(`Perspective ${i + 1} generation error:`, imgError);
-            
-            if (imgError.message === "GENERATION_TIMEOUT_BUT_MAY_HAVE_SAVED") {
-              // Wait 4 seconds for SaaS to finish async processing potentially
-              await new Promise(resolve => setTimeout(resolve, 4000));
-              
-              // Refresh history from SaaS
-              try {
-                const { userId, role } = saasContext;
-                const res = await fetch(`/api/upload/image?userId=${userId}&role=${role || 1}`);
-                const result = await res.json();
-                
-                if (result.success && result.data && result.data.length > 0) {
-                  // Try to find the image that was just saved (it should be the first one)
-                  const latestImg = result.data[0];
-                  // Simple check: if it was created in the last minute
-                  const createdTime = new Date(latestImg.createdAt).getTime();
-                  const now = new Date().getTime();
-                  
-                  if (now - createdTime < 120000) { // last 2 mins
-                    const url = latestImg.url;
-                    setGeneratedImages(prev => [...prev, url]);
-                    setSelectedImageIndex(i);
-                    console.log("Recovered 504 image from SaaS:", url);
-                    
-                    // We don't save to history again because fetchHistory() will be called eventually or we manually update state
-                    const mappedItem: GeneratedItem = {
-                      id: latestImg.id,
-                      originalImage: originalImage!,
-                      generatedImage: latestImg.url,
-                      title: latestImg.fileName.split('/').pop()?.split('_').pop() || 'AI海报',
-                      sellingPoints: newAnalysis.sellingPoints,
-                      footer: newAnalysis.footer,
-                      style: selectedStyle.name,
-                      ratio: selectedRatio,
-                      resolution: selectedResolution,
-                      timestamp: new Date(latestImg.createdAt).toLocaleTimeString(),
-                    };
-                    setHistory(prev => [mappedItem, ...prev.filter(h => h.id !== mappedItem.id)]);
-                    continue; // Successfully recovered!
-                  }
-                }
-              } catch (refreshErr) {
-                console.error("Failed to recover image from history:", refreshErr);
+            const result = await res.json();
+
+            if (result.success && result.data && result.data.length > 0) {
+              const latestImg = result.data[0];
+              const createdTime = new Date(latestImg.createdAt).getTime();
+              const now = new Date().getTime();
+
+              if (now - createdTime < 120000) {
+                // last 2 mins
+                const url = latestImg.url;
+                setGeneratedImages([url]);
+                setSelectedImageIndex(0);
+                console.log("Recovered 504 image from SaaS:", url);
+
+                const mappedItem: GeneratedItem = {
+                  id: latestImg.id,
+                  originalImage: originalImage!,
+                  generatedImage: latestImg.url,
+                  title:
+                    latestImg.fileName.split("/").pop()?.split("_").pop() ||
+                    "AI海报",
+                  sellingPoints: newAnalysis.sellingPoints,
+                  footer: newAnalysis.footer,
+                  style: selectedStyle.name,
+                  ratio: selectedRatio,
+                  resolution: selectedResolution,
+                  timestamp: new Date(latestImg.createdAt).toLocaleTimeString(),
+                };
+                setHistory((prev) => [
+                  mappedItem,
+                  ...prev.filter((h) => h.id !== mappedItem.id),
+                ]);
               }
             }
+          } catch (refreshErr) {
+            console.error("Failed to recover image from history:", refreshErr);
           }
+        } else {
+          alert(imgError.message || "生成失败，请重试");
+        }
       }
 
       if (generatedImages.length === 0 && !isGenerating) {
         // This means ALL failed if we get here and it was empty
       }
-
     } catch (error) {
-      console.error('Core generation logic failed:', error);
-      alert('生成过程出现异常，请检查网络或图片大小后重试');
+      console.error("Core generation logic failed:", error);
+      alert("生成过程出现异常，请检查网络或图片大小后重试");
     } finally {
       setIsGenerating(false);
     }
@@ -353,22 +415,29 @@ export default function App() {
     if (!resultContainerRef.current) return;
     try {
       // Clear cache and wait briefly
-      await new Promise(resolve => setTimeout(resolve, 200));
+      await new Promise((resolve) => setTimeout(resolve, 200));
       const dataUrl = await htmlToImage.toPng(resultContainerRef.current, {
         cacheBust: true,
-        pixelRatio: selectedResolution === '4K' ? 3 : (selectedResolution === '2K' ? 2 : 1.5),
+        pixelRatio:
+          selectedResolution === "4K"
+            ? 3
+            : selectedResolution === "2K"
+              ? 2
+              : 1.5,
         quality: 1,
       });
-      const link = document.createElement('a');
-      const safeTitle = analysis.title.replace(/[^\u4e00-\u9fa5a-z0-9]/gi, '_').substring(0, 30);
-      link.download = `poster-${safeTitle || 'design'}.png`;
+      const link = document.createElement("a");
+      const safeTitle = analysis.title
+        .replace(/[^\u4e00-\u9fa5a-z0-9]/gi, "_")
+        .substring(0, 30);
+      link.download = `poster-${safeTitle || "design"}.png`;
       link.href = dataUrl;
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
     } catch (err) {
-      console.error('Failed to export image', err);
-      alert('导出图片失败，可能是图片未完全加载或网络问题，请稍后重试');
+      console.error("Failed to export image", err);
+      alert("导出图片失败，可能是图片未完全加载或网络问题，请稍后重试");
     }
   };
 
@@ -377,17 +446,17 @@ export default function App() {
     if (!saasContext) return;
     try {
       const { userId, role } = saasContext;
-      const res = await fetch('/api/upload/image', {
-        method: 'DELETE',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id, userId, role: role || 1 })
+      const res = await fetch("/api/upload/image", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id, userId, role: role || 1 }),
       });
       const result = await res.json();
       if (result.success) {
-        setHistory(prev => prev.filter(item => item.id !== id));
+        setHistory((prev) => prev.filter((item) => item.id !== id));
       }
     } catch (err) {
-      console.error('Failed to delete image:', err);
+      console.error("Failed to delete image:", err);
     }
   };
 
@@ -395,161 +464,240 @@ export default function App() {
     setOriginalImage(item.originalImage);
     setGeneratedImages([item.generatedImage]);
     setSelectedImageIndex(0);
-    setAnalysis({ 
-      title: item.title, 
-      sellingPoints: item.sellingPoints, 
+    setAnalysis({
+      title: item.title,
+      sellingPoints: item.sellingPoints,
       footer: item.footer,
     });
     setSelectedRatio(item.ratio);
     setSelectedResolution(item.resolution);
-    setActiveTab('result');
+    setActiveTab("result");
   };
 
   return (
-    <div className="flex h-screen w-full bg-[#f8f9fa] text-slate-800 font-sans overflow-hidden">
-      <div className="w-[350px] border-r border-slate-200 bg-white flex flex-col">
-        <div className="p-6 border-b border-slate-100 space-y-4">
-          <div className="flex items-center gap-2">
-            <div className="w-7 h-7 rounded-full bg-slate-100 flex items-center justify-center font-bold text-xs text-slate-500">1</div>
-            <h3 className="font-semibold text-slate-700">产品上传与分析</h3>
-          </div>
-          <div className="relative aspect-square w-full rounded-2xl bg-slate-50 border-2 border-dashed border-slate-200 hover:border-orange-300 hover:bg-orange-50 transition-all group">
-            {originalImage ? (
-              <>
-                <img src={originalImage} className="w-full h-full object-contain p-4" alt="Product" />
-                <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-all rounded-2xl cursor-pointer">
-                  <label className="cursor-pointer text-white flex flex-col items-center gap-2">
-                    <RefreshCw className="w-8 h-8" />
-                    <span className="text-sm font-medium">重传图片</span>
-                    <input type="file" accept="image/*" className="hidden" onChange={handleFileUpload} />
-                  </label>
-                </div>
-              </>
-            ) : (
-              <label className="h-full w-full flex flex-col items-center justify-center gap-3 cursor-pointer">
-                <div className="w-12 h-12 rounded-full bg-white shadow-sm flex items-center justify-center">
-                  <Upload className="w-6 h-6 text-orange-500" />
-                </div>
-                <div className="text-center px-4">
-                  <p className="text-sm font-medium">点击上传产品图</p>
-                  <p className="text-xs text-slate-400 mt-1">支持 JPG, PNG, WEBP</p>
-                </div>
-                <input type="file" accept="image/*" className="hidden" onChange={handleFileUpload} />
-              </label>
-            )}
-          </div>
+    <div className="flex flex-col h-screen w-full bg-[#f8f9fa] text-slate-800 font-sans overflow-hidden">
+      {/* Header / Tabs */}
+      <div className="px-8 pt-6 flex justify-between items-end border-b border-slate-200 bg-white shadow-sm z-10 shrink-0">
+        <div className="flex gap-8">
+          <button
+            onClick={() => setActiveTab("settings")}
+            className={`pb-4 text-base font-semibold relative transition-colors ${activeTab === "settings" ? "text-slate-900 border-b-2 border-orange-500" : "text-slate-400 hover:text-slate-600"}`}
+          >
+            第一步：上传与参数设置
+          </button>
+          <button
+            onClick={() => setActiveTab("result")}
+            className={`pb-4 text-base font-semibold relative transition-colors ${activeTab === "result" ? "text-slate-900 border-b-2 border-orange-500" : "text-slate-400 hover:text-slate-600"}`}
+          >
+            第二步：生成结果与修改
+          </button>
         </div>
-
-        <div className="flex-1 overflow-hidden flex flex-col">
-          <div className="px-6 py-4 border-b border-slate-50 flex items-center gap-2">
-            <History className="w-5 h-5 text-slate-400" />
-            <h2 className="font-semibold text-slate-600">历史记录</h2>
+        
+        {/* User Info / Points */}
+        {saasContext && (
+          <div className="flex items-center gap-1.5 pb-4 text-sm font-medium text-slate-600">
+            <Coins className="w-4 h-4 text-orange-500" />
+            <span>
+              剩余积分:{" "}
+              <span className="text-orange-600 font-bold ml-0.5">
+                {userIntegral ?? saasContext.integral ?? 0}
+              </span>
+            </span>
           </div>
-          <div className="flex-1 overflow-y-auto p-4 space-y-3 custom-scrollbar">
-            {history.length === 0 ? (
-              <div className="text-center py-10 opacity-40">
-                <History className="w-10 h-10 mx-auto mb-2 text-slate-300" />
-                <p className="text-sm text-slate-400">暂无历史记录</p>
-              </div>
-            ) : (
-              history.map((item) => (
-                <div
-                  key={item.id}
-                  onClick={() => selectHistoryItem(item)}
-                  className={`group relative cursor-pointer rounded-xl border p-2 transition-all ${
-                    generatedImages.length === 1 && generatedImages[0] === item.generatedImage
-                      ? 'border-orange-500 bg-orange-50 ring-2 ring-orange-200' 
-                      : 'border-slate-100 bg-slate-50 hover:border-orange-200 hover:bg-orange-50'
-                  }`}
-                >
-                  <div className="flex gap-3">
-                    <img src={item.generatedImage} className="w-16 h-16 rounded-lg object-cover bg-white" alt="history" />
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium truncate">{item.title}</p>
-                      <p className="text-[10px] text-slate-300 mt-1 uppercase">{item.resolution} | {item.ratio}</p>
-                    </div>
-                  </div>
-                  <button 
-                    onClick={(e) => removeFromHistory(item.id, e)}
-                    className="absolute top-2 right-2 p-1.5 opacity-0 group-hover:opacity-100 text-slate-400 hover:text-red-500 bg-white shadow-sm rounded-full transition-all"
-                  >
-                    <Trash2 className="w-3.5 h-3.5" />
-                  </button>
-                </div>
-              ))
-            )}
-          </div>
-        </div>
+        )}
       </div>
 
-      <div className="flex-1 flex flex-col bg-white overflow-hidden">
-        <div className="px-6 pt-4 flex gap-8 border-b border-slate-100">
-          <button onClick={() => setActiveTab('settings')} className={`pb-3 text-sm font-semibold relative ${activeTab === 'settings' ? 'text-slate-900 border-b-2 border-orange-500' : 'text-slate-400'}`}>第2步 | 参数设置</button>
-          <button onClick={() => setActiveTab('result')} className={`pb-3 text-sm font-semibold relative ${activeTab === 'result' ? 'text-slate-900 border-b-2 border-orange-500' : 'text-slate-400'}`}>第3步 | 生成结果</button>
-        </div>
+      {/* Content area */}
+      <div className="flex-1 overflow-y-auto p-8 custom-scrollbar">
+        <AnimatePresence mode="wait">
+          {activeTab === "settings" ? (
+            <motion.div
+              key="settings"
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -10 }}
+              className="h-full max-w-[1400px] mx-auto flex flex-col lg:flex-row gap-8"
+            >
+              {/* STEP 1 - LEFT: Upload */}
+              <div className="w-full lg:w-[450px] shrink-0 h-full">
+                <div className="bg-white rounded-3xl p-6 border border-slate-200 shadow-sm h-full flex flex-col items-center">
+                  <div className="flex items-center gap-2 w-full mb-4 shrink-0">
+                    <h3 className="font-semibold text-slate-700">产品图片</h3>
+                  </div>
+                  <div className="relative w-full flex-1 rounded-2xl bg-slate-50 border-2 border-dashed border-slate-200 hover:border-orange-300 hover:bg-orange-50 transition-all group overflow-hidden">
+                    {originalImage ? (
+                      <>
+                        <img
+                          src={originalImage}
+                          className="w-full h-full object-contain p-4"
+                          alt="Product"
+                        />
+                        <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-all cursor-pointer">
+                          <label className="cursor-pointer text-white flex flex-col items-center gap-2 h-full w-full justify-center">
+                            <RefreshCw className="w-8 h-8" />
+                            <span className="text-sm font-medium">
+                              重传图片
+                            </span>
+                            <input
+                              type="file"
+                              accept="image/*"
+                              className="hidden"
+                              onChange={handleFileUpload}
+                            />
+                          </label>
+                        </div>
+                      </>
+                    ) : (
+                      <label className="h-full w-full flex flex-col items-center justify-center gap-3 cursor-pointer">
+                        <div className="w-12 h-12 rounded-full bg-white shadow-sm flex items-center justify-center">
+                          <Upload className="w-6 h-6 text-orange-500" />
+                        </div>
+                        <div className="text-center px-4">
+                          <p className="text-sm font-medium">点击上传产品图</p>
+                          <p className="text-xs text-slate-400 mt-1">
+                            支持 JPG, PNG, WEBP
+                          </p>
+                        </div>
+                        <input
+                          type="file"
+                          accept="image/*"
+                          className="hidden"
+                          onChange={handleFileUpload}
+                        />
+                      </label>
+                    )}
+                  </div>
+                </div>
+              </div>
 
-        <div className="flex-1 overflow-y-auto p-8 bg-[#fafbfc] custom-scrollbar">
-          <AnimatePresence mode="wait">
-            {activeTab === 'settings' ? (
-              <motion.div key="settings" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} className="max-w-4xl mx-auto space-y-8">
-                <div className="bg-white rounded-3xl p-8 border border-slate-100 shadow-sm space-y-3">
-                  <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider">整体视觉风格</label>
+              {/* STEP 1 - RIGHT: Settings */}
+              <div className="flex-1 space-y-6 overflow-y-auto pb-6">
+                <div className="bg-white rounded-3xl p-8 border border-slate-200 shadow-sm space-y-4">
+                  <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
+                    整体视觉风格
+                  </label>
                   <div className="flex flex-wrap gap-3">
                     {STYLES.map((style) => (
-                      <button key={style.id} onClick={() => setSelectedStyle(style)} className={`px-6 py-2.5 rounded-full text-sm border-2 ${selectedStyle.id === style.id ? 'bg-orange-500 border-orange-500 text-white shadow-md' : 'bg-white border-slate-100 text-slate-600'}`}>{style.name}</button>
+                      <button
+                        key={style.id}
+                        onClick={() => setSelectedStyle(style)}
+                        className={`px-6 py-3 rounded-xl text-sm font-medium border-2 transition-all ${selectedStyle.id === style.id ? "bg-orange-50 border-orange-500 text-orange-600 shadow-sm" : "bg-white border-slate-100 text-slate-600 hover:border-orange-200 hover:bg-orange-50"}`}
+                      >
+                        {style.name}
+                      </button>
                     ))}
                   </div>
                 </div>
-                <div className="bg-white rounded-3xl p-8 border border-slate-100 shadow-sm space-y-8">
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-10">
+
+                <div className="bg-white rounded-3xl p-8 border border-slate-200 shadow-sm space-y-4">
+                  <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
+                    视角选择
+                  </label>
+                  <div className="flex flex-wrap gap-3">
+                    {PERSPECTIVES.map((perspective) => (
+                      <button
+                        key={perspective.id}
+                        onClick={() => setSelectedPerspective(perspective)}
+                        className={`px-6 py-3 rounded-xl text-sm font-medium border-2 transition-all ${selectedPerspective.id === perspective.id ? "bg-orange-50 border-orange-500 text-orange-600 shadow-sm" : "bg-white border-slate-100 text-slate-600 hover:border-orange-200 hover:bg-orange-50"}`}
+                      >
+                        {perspective.name}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="bg-white rounded-3xl p-8 border border-slate-200 shadow-sm space-y-8">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                     <div className="space-y-4">
-                      <label className="text-xs font-semibold text-slate-500 block">画布比例</label>
+                      <label className="text-xs font-semibold text-slate-500 block">
+                        画布比例
+                      </label>
                       <div className="flex gap-2">
-                        {RATIOS.map(ratio => (
-                          <button key={ratio} onClick={() => setSelectedRatio(ratio)} className={`flex-1 py-3 rounded-xl border-2 font-bold ${selectedRatio === ratio ? 'bg-slate-900 text-white' : 'bg-slate-50 text-slate-500'}`}>{ratio}</button>
+                        {RATIOS.map((ratio) => (
+                          <button
+                            key={ratio}
+                            onClick={() => setSelectedRatio(ratio)}
+                            className={`flex-1 py-3 rounded-xl border-2 font-bold transition-colors ${selectedRatio === ratio ? "bg-slate-900 border-slate-900 text-white" : "bg-slate-50 border-slate-100 text-slate-500 hover:border-slate-300"}`}
+                          >
+                            {ratio}
+                          </button>
                         ))}
                       </div>
                     </div>
                     <div className="space-y-4">
-                      <label className="text-xs font-semibold text-slate-500 block">输出分辨率</label>
+                      <label className="text-xs font-semibold text-slate-500 block">
+                        输出分辨率
+                      </label>
                       <div className="flex gap-2">
-                        {RESOLUTIONS.map(res => (
-                          <button key={res} onClick={() => setSelectedResolution(res)} className={`flex-1 py-3 rounded-xl border-2 font-bold ${selectedResolution === res ? 'bg-slate-900 text-white' : 'bg-slate-50 text-slate-500'}`}>{res}</button>
+                        {RESOLUTIONS.map((res) => (
+                          <button
+                            key={res}
+                            onClick={() => setSelectedResolution(res)}
+                            className={`flex-1 py-3 rounded-xl border-2 font-bold transition-colors ${selectedResolution === res ? "bg-slate-900 border-slate-900 text-white" : "bg-slate-50 border-slate-100 text-slate-500 hover:border-slate-300"}`}
+                          >
+                            {res}
+                          </button>
                         ))}
                       </div>
                     </div>
                   </div>
-                  <button onClick={handleGenerate} className="w-full py-5 rounded-2xl font-bold bg-slate-800 text-white hover:bg-slate-900 shadow-lg flex items-center justify-center gap-3"><Sparkles className="w-6 h-6" />立即开始生成主图</button>
+                  <button
+                    onClick={handleGenerate}
+                    className="w-full py-5 rounded-2xl font-bold text-lg bg-orange-500 text-white hover:bg-orange-600 shadow-[0_4px_14px_0_rgba(249,115,22,0.39)] transition-all flex items-center justify-center gap-3"
+                  >
+                    <Sparkles className="w-6 h-6" />
+                    开始生成商品图
+                  </button>
                 </div>
-              </motion.div>
-            ) : (
-              <motion.div key="result" initial={{ opacity: 0, scale: 0.98 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.98 }} className="min-h-full flex flex-col items-center pb-10">
-                <div className="max-w-6xl w-full">
-                  {isGenerating ? (
-                    <div className="max-w-2xl mx-auto aspect-square w-full rounded-3xl bg-slate-100 flex flex-col items-center justify-center gap-4">
-                      <RefreshCw className="w-12 h-12 text-orange-500 animate-spin" />
-                      <p className="text-slate-500 font-medium tracking-wide">AI 正在并发创作三种视角构图中 ({generationStep}/3)...</p>
-                      <p className="text-xs text-slate-400">请耐心等待，每个视角约需 5-10 秒</p>
-                    </div>
-                  ) : generatedImages.length > 0 ? (
-                    <div className="flex flex-col lg:flex-row gap-8 w-full items-start">
-                      {/* Left Side: Poster Preview */}
-                      <div className="flex-1 w-full lg:sticky lg:top-4">
-                        <div className="relative group">
-                          <div ref={resultContainerRef} className="relative overflow-hidden rounded-[2.5rem] shadow-2xl border border-white/20 bg-white">
-                            <img 
-                              src={generatedImageUrl!} 
-                              className="w-full h-auto pointer-events-none" 
-                              alt="Poster Result" 
+              </div>
+            </motion.div>
+          ) : (
+            <motion.div
+              key="result"
+              initial={{ opacity: 0, scale: 0.98 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.98 }}
+              className="h-full"
+            >
+              <div className="max-w-[1400px] mx-auto h-full flex flex-col lg:flex-row gap-8 pb-4">
+                {/* STEP 2 - LEFT: Preview & History */}
+                <div className="flex-1 flex flex-col gap-6 min-w-0 h-full">
+                  {/* Poster Preview Area */}
+                  <div className="bg-white rounded-[2.5rem] border border-slate-200 shadow-sm flex-1 flex flex-col min-h-[400px] overflow-hidden">
+                    {isGenerating ? (
+                      <div className="flex-1 flex flex-col items-center justify-center gap-4 p-12">
+                        <RefreshCw className="w-16 h-16 text-orange-500 animate-spin" />
+                        <p className="text-lg text-slate-600 font-medium tracking-wide">
+                          AI 正在为您创作专属商品海报...
+                        </p>
+                        <p className="text-sm text-slate-400">
+                          请耐心等待，预计需要 5-10 秒
+                        </p>
+                      </div>
+                    ) : generatedImages.length > 0 ? (
+                      <div className="flex-1 w-full flex items-center justify-center p-6 bg-slate-50/50">
+                        <div className="relative group max-w-full h-full flex items-center justify-center">
+                          <div
+                            ref={resultContainerRef}
+                            className="relative overflow-hidden rounded-[2.5rem] shadow-2xl border border-slate-200 bg-white inline-block"
+                          >
+                            <img
+                              src={generatedImageUrl!}
+                              className="max-h-[60vh] object-contain pointer-events-none block"
+                              alt="Poster Result"
                               crossOrigin="anonymous"
                               referrerPolicy="no-referrer"
                             />
-                            
+
                             {/* DYNAMIC POSTER LAYOUT LOGIC - SURROUNDING SUBJECT */}
-                            <div className={`absolute inset-0 pointer-events-none z-20 py-[10%] px-[4%] flex flex-col items-center justify-between`}>
+                            <div
+                              className={`absolute inset-0 pointer-events-none z-20 py-[10%] px-[4%] flex flex-col items-center justify-between`}
+                            >
                               {/* Title - Fixed Top Center */}
                               <div className="w-full text-center mb-4">
-                                <span className={`block font-sans font-bold text-[36px] tracking-[0.15em] ${currentTextColor} leading-tight drop-shadow-xl whitespace-pre-line`}>
+                                <span
+                                  className={`block font-sans font-bold text-[36px] tracking-[0.15em] ${currentTextColor} leading-tight drop-shadow-xl whitespace-pre-line`}
+                                >
                                   {analysis.title}
                                 </span>
                               </div>
@@ -557,39 +705,99 @@ export default function App() {
                               {/* Middle Area - Surrounding Selling Points */}
                               <div className="flex-1 w-full relative">
                                 {analysis.sellingPoints.length === 1 && (
-                                  <div className={`absolute left-0 top-1/2 -translate-y-1/2 flex items-center gap-3 ${currentTextColor} font-rounded font-semibold text-[20px] drop-shadow-sm`}>
-                                    <div className={`w-2 h-2 rounded-full shrink-0 ${currentTextColor.includes('white') ? 'bg-white' : 'bg-slate-800'}`} />
-                                    <span className="whitespace-pre-line">{analysis.sellingPoints[0].text}</span>
+                                  <div
+                                    className={`absolute left-0 top-1/2 -translate-y-1/2 flex items-center gap-3 ${currentTextColor} font-rounded font-semibold text-[20px] drop-shadow-sm`}
+                                  >
+                                    <div
+                                      className={`w-2 h-2 rounded-full shrink-0 ${
+                                        currentTextColor.includes("white")
+                                          ? "bg-white"
+                                          : "bg-slate-800"
+                                      }`}
+                                    />
+                                    <span className="whitespace-pre-line">
+                                      {analysis.sellingPoints[0].text}
+                                    </span>
                                   </div>
                                 )}
 
                                 {analysis.sellingPoints.length === 2 && (
                                   <>
-                                    <div className={`absolute left-0 top-1/2 -translate-y-1/2 flex items-center gap-3 ${currentTextColor} font-rounded font-semibold text-[20px] drop-shadow-sm text-right`}>
-                                      <span className="whitespace-pre-line">{analysis.sellingPoints[0].text}</span>
-                                      <div className={`w-2 h-2 rounded-full shrink-0 ${currentTextColor.includes('white') ? 'bg-white' : 'bg-slate-800'}`} />
+                                    <div
+                                      className={`absolute left-0 top-1/2 -translate-y-1/2 flex items-center gap-3 ${currentTextColor} font-rounded font-semibold text-[20px] drop-shadow-sm text-right`}
+                                    >
+                                      <span className="whitespace-pre-line">
+                                        {analysis.sellingPoints[0].text}
+                                      </span>
+                                      <div
+                                        className={`w-2 h-2 rounded-full shrink-0 ${
+                                          currentTextColor.includes("white")
+                                            ? "bg-white"
+                                            : "bg-slate-800"
+                                        }`}
+                                      />
                                     </div>
-                                    <div className={`absolute -right-[10px] top-1/2 -translate-y-1/2 flex items-center gap-3 ${currentTextColor} font-rounded font-semibold text-[20px] drop-shadow-sm text-left`}>
-                                      <div className={`w-2 h-2 rounded-full shrink-0 ${currentTextColor.includes('white') ? 'bg-white' : 'bg-slate-800'}`} />
-                                      <span className="whitespace-pre-line">{analysis.sellingPoints[1].text}</span>
+                                    <div
+                                      className={`absolute -right-[10px] top-1/2 -translate-y-1/2 flex items-center gap-3 ${currentTextColor} font-rounded font-semibold text-[20px] drop-shadow-sm text-left`}
+                                    >
+                                      <div
+                                        className={`w-2 h-2 rounded-full shrink-0 ${
+                                          currentTextColor.includes("white")
+                                            ? "bg-white"
+                                            : "bg-slate-800"
+                                      }`}
+                                      />
+                                      <span className="whitespace-pre-line">
+                                        {analysis.sellingPoints[1].text}
+                                      </span>
                                     </div>
                                   </>
                                 )}
 
                                 {analysis.sellingPoints.length >= 3 && (
                                   <>
-                                    <div className={`absolute left-0 top-1/2 -translate-y-1/2 flex items-center gap-3 ${currentTextColor} font-rounded font-semibold text-[20px] drop-shadow-sm text-right`}>
-                                      <span className="whitespace-pre-line">{analysis.sellingPoints[0].text}</span>
-                                      <div className={`w-2 h-2 rounded-full shrink-0 ${currentTextColor.includes('white') ? 'bg-white' : 'bg-slate-800'}`} />
+                                    <div
+                                      className={`absolute left-0 top-1/2 -translate-y-1/2 flex items-center gap-3 ${currentTextColor} font-rounded font-semibold text-[20px] drop-shadow-sm text-right`}
+                                    >
+                                      <span className="whitespace-pre-line">
+                                        {analysis.sellingPoints[0].text}
+                                      </span>
+                                      <div
+                                        className={`w-2 h-2 rounded-full shrink-0 ${
+                                          currentTextColor.includes("white")
+                                            ? "bg-white"
+                                            : "bg-slate-800"
+                                        }`}
+                                      />
                                     </div>
-                                    <div className="absolute -right-[10px] top-1/2 -translate-y-1/2 flex flex-col gap-48">
-                                      <div className={`flex items-center gap-3 ${currentTextColor} font-rounded font-semibold text-[20px] drop-shadow-sm text-left`}>
-                                        <div className={`w-2 h-2 rounded-full shrink-0 ${currentTextColor.includes('white') ? 'bg-white' : 'bg-slate-800'}`} />
-                                        <span className="whitespace-pre-line">{analysis.sellingPoints[1].text}</span>
+                                    <div className="absolute -right-[10px] top-1/2 -translate-y-1/2 flex flex-col gap-24 lg:gap-40">
+                                      <div
+                                        className={`flex items-center gap-3 ${currentTextColor} font-rounded font-semibold text-[20px] drop-shadow-sm text-left`}
+                                      >
+                                        <div
+                                          className={`w-2 h-2 rounded-full shrink-0 ${
+                                            currentTextColor.includes("white")
+                                              ? "bg-white"
+                                              : "bg-slate-800"
+                                          }`}
+                                        />
+                                        <span className="whitespace-pre-line">
+                                          {analysis.sellingPoints[1].text}
+                                        </span>
                                       </div>
-                                      <div className={`flex items-center gap-3 ${currentTextColor} font-rounded font-semibold text-[20px] drop-shadow-sm text-left`}>
-                                        <div className={`w-2 h-2 rounded-full shrink-0 ${currentTextColor.includes('white') ? 'bg-white' : 'bg-slate-800'}`} />
-                                        <span className="whitespace-pre-line">{analysis.sellingPoints[2].text || ''}</span>
+                                      <div
+                                        className={`flex items-center gap-3 ${currentTextColor} font-rounded font-semibold text-[20px] drop-shadow-sm text-left`}
+                                      >
+                                        <div
+                                          className={`w-2 h-2 rounded-full shrink-0 ${
+                                            currentTextColor.includes("white")
+                                              ? "bg-white"
+                                              : "bg-slate-800"
+                                          }`}
+                                        />
+                                        <span className="whitespace-pre-line">
+                                          {analysis.sellingPoints[2].text || ""}
+                                        </span>
                                       </div>
                                     </div>
                                   </>
@@ -599,80 +807,218 @@ export default function App() {
                               {/* Footer - Fixed Bottom Center */}
                               {analysis.footer && (
                                 <div className="w-full text-center mt-6">
-                                  <span className={`block font-rounded font-light text-[18px] tracking-[0.2em] opacity-90 ${currentTextColor} drop-shadow-sm`}>
+                                  <span
+                                    className={`block font-rounded font-light text-[18px] tracking-[0.2em] opacity-90 ${currentTextColor} drop-shadow-sm`}
+                                  >
                                     {analysis.footer}
                                   </span>
                                 </div>
                               )}
                             </div>
                           </div>
-                          <div className="absolute top-6 right-6 z-30 opacity-0 group-hover:opacity-100 transition-opacity flex gap-2">
-                             <button onClick={downloadImage} className="p-4 bg-white/90 hover:bg-white text-slate-800 rounded-full shadow-xl" title="下载海报"><Download className="w-6 h-6" /></button>
-                          </div>
                         </div>
                       </div>
-
-                      {/* Right Side: Editing Controls */}
-                      <div className="w-full lg:w-[400px] flex flex-col gap-6">
-                        <div className="bg-white rounded-3xl p-8 border border-slate-100 shadow-sm space-y-6">
-                          <div className="flex items-center gap-2 font-bold text-lg"><Sparkles className="w-5 h-5 text-orange-500" />海报文案修改</div>
-                          <div className="space-y-4">
-                             <div className="space-y-2">
-                               <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">主标题内容</label>
-                               <textarea rows={2} value={analysis.title} onChange={(e) => setAnalysis({ ...analysis, title: e.target.value })} className="w-full px-4 py-3 rounded-xl border border-slate-100 font-bold text-lg outline-none resize-none" />
-                             </div>
-                             <div className="space-y-3">
-                               <div className="flex justify-between items-center text-[10px] font-bold text-slate-400 uppercase tracking-wider">
-                                <span>核心卖点 (最多3条) {analysis.sellingPoints.length}/3</span>
-                                <button 
-                                  onClick={addSellingPoint} 
-                                  className={`text-orange-500 px-2 py-0.5 rounded hover:bg-orange-50 transition-colors ${analysis.sellingPoints.length >= 3 ? 'opacity-30 cursor-not-allowed' : ''}`}
-                                  disabled={analysis.sellingPoints.length >= 3}
-                                >
-                                  添加
-                                </button>
-                              </div>
-                               <div className="space-y-2">
-                                 {analysis.sellingPoints.map((sp) => (
-                                   <div key={sp.id} className="flex gap-2">
-                                     <textarea rows={2} value={sp.text} onChange={(e) => updateSellingPointText(sp.id, e.target.value)} className="flex-1 px-4 py-2 rounded-xl border border-slate-50 text-sm outline-none resize-none" />
-                                     <button onClick={() => removeSellingPoint(sp.id)} className="text-slate-300 hover:text-red-500 pt-2"><Trash2 className="w-4 h-4" /></button>
-                                   </div>
-                                 ))}
-                               </div>
-                             </div>
-                             <div className="space-y-2">
-                               <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">底部补充信息</label>
-                               <input type="text" value={analysis.footer || ''} onChange={(e) => setAnalysis({ ...analysis, footer: e.target.value })} className="w-full px-4 py-3 rounded-xl border border-slate-100 text-sm outline-none" />
-                             </div>
-                          </div>
-                        </div>
-
-                        <div className="bg-white rounded-3xl p-8 border border-slate-100 shadow-sm flex flex-col gap-4">
-                           <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">文字配色</label>
-                           <div className="grid grid-cols-2 gap-2">
-                             {TEXT_COLORS.map(c => (
-                               <button key={c.id} onClick={() => setSelectedTextColor(c.id)} className={`px-2 py-2.5 text-[10px] rounded-lg border transition-all ${selectedTextColor === c.id ? 'bg-orange-500 text-white border-orange-500 shadow-sm' : 'bg-white text-slate-500 border-slate-100 hover:border-orange-200'}`}>{c.name}</button>
-                             ))}
-                           </div>
-                        </div>
+                    ) : (
+                      <div className="flex-1 flex flex-col items-center justify-center gap-4 text-slate-400 p-12">
+                        <ImageIcon className="w-16 h-16 opacity-10" />
+                        <p className="text-lg">请先在第一步上传并点击生成商品图</p>
                       </div>
+                    )}
+                  </div>
+
+                  {/* History Section at the bottom left */}
+                  <div className="w-full bg-white rounded-3xl p-6 border border-slate-200 shadow-sm flex flex-col shrink-0">
+                    <div className="flex items-center gap-2 w-full mb-4">
+                      <History className="w-5 h-5 text-slate-400" />
+                      <h3 className="font-semibold text-slate-700">
+                        历史记录
+                      </h3>
                     </div>
-                  ) : (
-                    <div className="max-w-2xl mx-auto aspect-square w-full rounded-3xl bg-slate-50 border-2 border-dashed flex flex-col items-center justify-center gap-3 text-slate-400">
-                      <ImageIcon className="w-16 h-16 opacity-10" />
-                      <p>请上传并点击生成</p>
+                    <div className="flex overflow-x-auto gap-4 custom-scrollbar pb-2">
+                      {history.length === 0 ? (
+                        <div className="text-center py-4 w-full opacity-40">
+                          <History className="w-8 h-8 mx-auto mb-2 text-slate-300" />
+                          <p className="text-sm text-slate-400">
+                            暂无历史记录
+                          </p>
+                        </div>
+                      ) : (
+                        history.map((item) => (
+                          <div
+                            key={item.id}
+                            onClick={() => selectHistoryItem(item)}
+                            className={`group relative w-[220px] shrink-0 cursor-pointer rounded-2xl border p-3 flex gap-3 transition-all items-center ${
+                              generatedImages.length === 1 &&
+                              generatedImages[0] === item.generatedImage
+                                ? "border-orange-500 bg-orange-50 ring-2 ring-orange-200"
+                                : "border-slate-100 bg-slate-50 hover:border-orange-200 hover:bg-orange-50"
+                            }`}
+                          >
+                            <img
+                              src={item.generatedImage}
+                              className="w-[60px] h-[60px] rounded-xl object-cover bg-white shadow-sm shrink-0"
+                              alt="history"
+                            />
+                            <div className="flex-1 min-w-0">
+                              <p className="text-sm font-semibold text-slate-700 truncate">
+                                {item.title}
+                              </p>
+                              <p className="text-[10px] text-slate-400 mt-1 uppercase font-medium">
+                                {item.resolution} | {item.ratio}
+                              </p>
+                            </div>
+                            <button
+                              onClick={(e) => removeFromHistory(item.id, e)}
+                              className="absolute top-2 right-2 p-1.5 opacity-0 group-hover:opacity-100 text-slate-400 hover:text-red-500 bg-white shadow-sm rounded-full transition-all"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        ))
+                      )}
                     </div>
-                  )}
+                  </div>
                 </div>
-              </motion.div>
-            )}
-          </AnimatePresence>
-        </div>
+
+                {/* STEP 2 - RIGHT: Editing Controls */}
+                <div className="w-full lg:w-[450px] shrink-0 h-full">
+                  <div className="bg-white rounded-3xl p-6 lg:p-8 border border-slate-200 shadow-sm h-full flex flex-col gap-6 overflow-y-auto">
+                    {generatedImages.length > 0 && !isGenerating ? (
+                      <>
+                        <div className="flex items-center gap-2 font-bold text-lg shrink-0">
+                          <Sparkles className="w-5 h-5 text-orange-500" />
+                          海报文案与排版
+                        </div>
+                        <div className="space-y-4 shrink-0">
+                          <div className="space-y-2">
+                            <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                              主标题内容
+                            </label>
+                            <textarea
+                              rows={2}
+                              value={analysis.title}
+                              onChange={(e) =>
+                                setAnalysis({
+                                  ...analysis,
+                                  title: e.target.value,
+                                })
+                              }
+                              className="w-full px-4 py-3 rounded-xl border border-slate-100 font-bold text-lg outline-none resize-none focus:ring-2 focus:ring-orange-100 transition-all bg-slate-50"
+                            />
+                          </div>
+                          <div className="space-y-3">
+                            <div className="flex justify-between items-center text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                              <span>
+                                核心卖点 (最多3条){" "}
+                                {analysis.sellingPoints.length}/3
+                              </span>
+                              <button
+                                onClick={addSellingPoint}
+                                className={`text-orange-500 px-3 py-1 rounded-md bg-orange-50 hover:bg-orange-100 transition-colors ${
+                                  analysis.sellingPoints.length >= 3
+                                    ? "opacity-30 cursor-not-allowed"
+                                    : ""
+                                }`}
+                                disabled={analysis.sellingPoints.length >= 3}
+                              >
+                                添加
+                              </button>
+                            </div>
+                            <div className="space-y-2">
+                              {analysis.sellingPoints.map((sp) => (
+                                <div key={sp.id} className="flex gap-2">
+                                  <textarea
+                                    rows={2}
+                                    value={sp.text}
+                                    onChange={(e) =>
+                                      updateSellingPointText(
+                                        sp.id,
+                                        e.target.value
+                                      )
+                                    }
+                                    className="flex-1 px-4 py-2 rounded-xl border border-slate-50 bg-slate-50 text-sm outline-none resize-none focus:ring-2 focus:ring-orange-100 transition-all"
+                                  />
+                                  <button
+                                    onClick={() => removeSellingPoint(sp.id)}
+                                    className="text-slate-300 hover:text-red-500 pt-2 transition-colors"
+                                  >
+                                    <Trash2 className="w-4 h-4" />
+                                  </button>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                          <div className="space-y-2">
+                            <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                              底部补充信息
+                            </label>
+                            <input
+                              type="text"
+                              value={analysis.footer || ""}
+                              onChange={(e) =>
+                                setAnalysis({
+                                  ...analysis,
+                                  footer: e.target.value,
+                                })
+                              }
+                              className="w-full px-4 py-3 rounded-xl border border-slate-100 bg-slate-50 text-sm outline-none focus:ring-2 focus:ring-orange-100 transition-all"
+                            />
+                          </div>
+                        </div>
+
+                        <div className="bg-slate-50 rounded-2xl p-5 border border-slate-100 shrink-0 mt-2">
+                          <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-3">
+                            文字配色
+                          </label>
+                          <div className="grid grid-cols-2 lg:grid-cols-3 gap-2">
+                            {TEXT_COLORS.map((c) => (
+                              <button
+                                key={c.id}
+                                onClick={() => setSelectedTextColor(c.id)}
+                                className={`px-2 py-2.5 text-[11px] font-medium rounded-lg border transition-all ${
+                                  selectedTextColor === c.id
+                                    ? "bg-orange-50 text-orange-600 border-orange-500 shadow-sm"
+                                    : "bg-white text-slate-500 border-slate-100 hover:border-orange-200 hover:bg-orange-50"
+                                }`}
+                              >
+                                {c.name}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+
+                        <div className="mt-auto pt-4 shrink-0">
+                          <button
+                            onClick={downloadImage}
+                            className="w-full py-4 rounded-2xl font-bold text-lg bg-orange-500 text-white hover:bg-orange-600 shadow-[0_4px_14px_0_rgba(249,115,22,0.39)] transition-all flex items-center justify-center gap-3"
+                          >
+                            <Download className="w-5 h-5" /> 下载高清海报
+                          </button>
+                        </div>
+                      </>
+                    ) : (
+                      <div className="flex-1 flex flex-col items-center justify-center gap-4 text-slate-400 opacity-60 px-8 text-center bg-slate-50/50 rounded-2xl border-2 border-dashed border-slate-200">
+                        <ImageIcon className="w-12 h-12 opacity-20 mb-2" />
+                        <p className="font-medium text-slate-500">
+                          生成商品图后
+                          <br />
+                          方可在此处排版和修改文字
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
       </div>
+
       <style>{`
-        .custom-scrollbar::-webkit-scrollbar { width: 4px; }
-        .custom-scrollbar::-webkit-scrollbar-thumb { background: #e2e8f0; border-radius: 10px; }
+        .custom-scrollbar::-webkit-scrollbar { width: 6px; }
+        .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
       `}</style>
     </div>
   );
