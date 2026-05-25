@@ -3,6 +3,7 @@ import { GoogleGenAI, Type } from "@google/genai";
 
 const SAAS_BASE = "http://aibigtree.com";
 const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || "" });
+const APP_SOURCE = "serum-ai-e-com-generator";
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   // 1. CORS Configuration
@@ -134,8 +135,8 @@ Instructions:
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-              userId, toolId, source: "result", mimeType: "image/png", 
-              fileName: "generated.png", fileSize: imageBuffer.length
+              userId, toolId, source: APP_SOURCE, mimeType: "image/png", 
+              fileName: `${APP_SOURCE}_${Date.now()}.png`, fileSize: imageBuffer.length
             })
           })
         ]);
@@ -160,7 +161,7 @@ Instructions:
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ 
-            userId, toolId, source: "result", 
+            userId, toolId, source: APP_SOURCE, 
             objectKey: tokenData.objectKey, fileSize: imageBuffer.length 
           })
         });

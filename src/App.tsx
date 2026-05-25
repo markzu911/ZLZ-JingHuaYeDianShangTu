@@ -107,6 +107,7 @@ const PERSPECTIVES = [
 
 const RATIOS = ["1:1", "3:4", "4:3", "16:9"];
 const RESOLUTIONS = ["1K", "2K", "4K"];
+const APP_SOURCE = "serum-ai-e-com-generator";
 
 export default function App() {
   // State
@@ -219,16 +220,23 @@ export default function App() {
     try {
       const { userId, role, toolId } = saasContext;
       const res = await fetch(
-        `/api/upload/image?userId=${userId}&role=${role || 1}&toolId=${toolId || ""}`,
+        `/api/upload/image?userId=${userId}&role=${role || 1}&toolId=${toolId || ""}&source=${APP_SOURCE}`,
       );
       const result = await res.json();
       if (result.success && result.data) {
+        // Double filter client-side just in case
+        const appImages = result.data.filter((img: any) => {
+          const source = img.source || img.meta?.source || "";
+          const fileName = img.fileName || img.objectKey || img.url || "";
+          return source === APP_SOURCE || fileName.includes(APP_SOURCE);
+        });
+
         // Map SaaS image data to match GeneratedItem interface
-        const mappedHistory: GeneratedItem[] = result.data.map((img: any) => ({
+        const mappedHistory: GeneratedItem[] = appImages.map((img: any) => ({
           id: img.id,
-          originalImage: "", // original image is not stored in SaaS as per princple 0
+          originalImage: "", // original image is not stored in SaaS
           generatedImage: img.url,
-          title: img.fileName.split("/").pop()?.split("_").pop() || "AI海报",
+          title: img.fileName.split("/").pop()?.split("_").pop()?.replace(".png", "") || "AI海报",
           sellingPoints: [],
           style: "",
           ratio: "1:1",
@@ -356,40 +364,48 @@ export default function App() {
           try {
             const { userId, role, toolId } = saasContext;
             const res = await fetch(
-              `/api/upload/image?userId=${userId}&role=${role || 1}&toolId=${toolId || ""}`,
+              `/api/upload/image?userId=${userId}&role=${role || 1}&toolId=${toolId || ""}&source=${APP_SOURCE}`,
             );
             const result = await res.json();
 
             if (result.success && result.data && result.data.length > 0) {
-              const latestImg = result.data[0];
-              const createdTime = new Date(latestImg.createdAt).getTime();
-              const now = new Date().getTime();
+              const appImages = result.data.filter((img: any) => {
+                const source = img.source || img.meta?.source || "";
+                const fileName = img.fileName || img.objectKey || img.url || "";
+                return source === APP_SOURCE || fileName.includes(APP_SOURCE);
+              });
 
-              if (now - createdTime < 120000) {
-                // last 2 mins
-                const url = latestImg.url;
-                setGeneratedImages([url]);
-                setSelectedImageIndex(0);
-                console.log("Recovered 504 image from SaaS:", url);
+              if (appImages.length > 0) {
+                const latestImg = appImages[0];
+                const createdTime = new Date(latestImg.createdAt).getTime();
+                const now = new Date().getTime();
 
-                const mappedItem: GeneratedItem = {
-                  id: latestImg.id,
-                  originalImage: originalImage!,
-                  generatedImage: latestImg.url,
-                  title:
-                    latestImg.fileName.split("/").pop()?.split("_").pop() ||
-                    "AI海报",
-                  sellingPoints: newAnalysis.sellingPoints,
-                  footer: newAnalysis.footer,
-                  style: selectedStyle.name,
-                  ratio: selectedRatio,
-                  resolution: selectedResolution,
-                  timestamp: new Date(latestImg.createdAt).toLocaleTimeString(),
-                };
-                setHistory((prev) => [
-                  mappedItem,
-                  ...prev.filter((h) => h.id !== mappedItem.id),
-                ]);
+                if (now - createdTime < 120000) {
+                  // last 2 mins
+                  const url = latestImg.url;
+                  setGeneratedImages([url]);
+                  setSelectedImageIndex(0);
+                  console.log("Recovered 504 image from SaaS:", url);
+
+                  const mappedItem: GeneratedItem = {
+                    id: latestImg.id,
+                    originalImage: originalImage!,
+                    generatedImage: latestImg.url,
+                    title:
+                      latestImg.fileName.split("/").pop()?.split("_").pop()?.replace(".png", "") ||
+                      "AI海报",
+                    sellingPoints: newAnalysis.sellingPoints,
+                    footer: newAnalysis.footer,
+                    style: selectedStyle.name,
+                    ratio: selectedRatio,
+                    resolution: selectedResolution,
+                    timestamp: new Date(latestImg.createdAt).toLocaleTimeString(),
+                  };
+                  setHistory((prev) => [
+                    mappedItem,
+                    ...prev.filter((h) => h.id !== mappedItem.id),
+                  ]);
+                }
               }
             }
           } catch (refreshErr) {
@@ -441,19 +457,27 @@ export default function App() {
     }
   };
 
-  const removeFromHistory = async (id: string, e: React.MouseEvent) => {
+  const removeFromHistory = async (item: GeneratedItem, e: React.MouseEvent) => {
     e.stopPropagation();
     if (!saasContext) return;
+
+    // Safety check: ensure it belongs to this app
+    const isAppImage = item.generatedImage.includes(APP_SOURCE);
+    if (!isAppImage) {
+      console.warn("Attempted to delete an image not belonging to this app.");
+      return;
+    }
+
     try {
       const { userId, role } = saasContext;
       const res = await fetch("/api/upload/image", {
         method: "DELETE",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id, userId, role: role || 1 }),
+        body: JSON.stringify({ id: item.id, userId, role: role || 1 }),
       });
       const result = await res.json();
       if (result.success) {
-        setHistory((prev) => prev.filter((item) => item.id !== id));
+        setHistory((prev) => prev.filter((h) => h.id !== item.id));
       }
     } catch (err) {
       console.error("Failed to delete image:", err);
@@ -893,7 +917,7 @@ export default function App() {
                               </p>
                             </div>
                             <button
-                              onClick={(e) => removeFromHistory(item.id, e)}
+                              onClick={(e) => removeFromHistory(item, e)}
                               className="absolute top-2 right-2 p-1.5 opacity-0 group-hover:opacity-100 text-slate-400 hover:text-red-500 bg-white shadow-sm rounded-full transition-all"
                             >
                               <Trash2 className="w-3.5 h-3.5" />
