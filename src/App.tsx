@@ -504,10 +504,10 @@ export default function App() {
       <div className="px-6 py-4 flex justify-between items-center bg-white shadow-sm z-10 shrink-0 border-b border-slate-100">
         <div className="flex items-center gap-3 w-[250px]">
           <div className="w-10 h-10 bg-slate-900 rounded-xl flex items-center justify-center text-white font-bold text-lg">
-            香
+            精
           </div>
           <div>
-            <h1 className="font-bold text-slate-800 text-base leading-tight">香水电商图</h1>
+            <h1 className="font-bold text-slate-800 text-base leading-tight">精华液电商图</h1>
             <p className="text-[10px] text-slate-500">智能生成工具</p>
           </div>
         </div>
@@ -591,7 +591,7 @@ export default function App() {
                           <Upload className="w-7 h-7 text-slate-800" />
                         </div>
                         <div className="text-center px-4">
-                          <p className="text-base font-bold text-slate-800">上传香水实拍图</p>
+                          <p className="text-base font-bold text-slate-800">上传精华液实拍图</p>
                           <p className="text-xs text-slate-400 mt-1">推荐纯色背景环境</p>
                         </div>
                         <input
