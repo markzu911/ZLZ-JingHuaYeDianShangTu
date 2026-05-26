@@ -29,19 +29,15 @@ const ai = new GoogleGenAI({
 const ANALYZE_MODEL = process.env.GEMINI_ANALYZE_MODEL || "gemini-3.5-flash";
 const IMAGE_MODEL = process.env.GEMINI_IMAGE_MODEL || "gemini-3.1-flash-image-preview";
 
-async function safeReadResponse(response: any) {
+async function readUpstreamResponse(response: any) {
   const text = await response.text().catch(() => "");
-  let data = null;
-  let isJson = false;
+  let data: any = null;
   try {
-    if (text) {
-      data = JSON.parse(text);
-      isJson = true;
-    }
-  } catch (err) {
-    // Not valid JSON
+    data = text ? JSON.parse(text) : null;
+  } catch {
+    data = null;
   }
-  return { text, data, isJson, status: response.status, ok: response.ok };
+  return { text, data };
 }
 
 // 1. SaaS Proxy
@@ -56,23 +52,19 @@ app.all(['/api/tool/*', '/api/upload/*'], async (req, res) => {
         'Content-Type': 'application/json',
         'User-Agent': 'Serum-AI-Generator/1.0'
       },
-      body: req.method !== 'GET' ? JSON.stringify(req.body) : undefined,
+      body: req.method !== 'GET' && req.method !== 'HEAD' && req.body && Object.keys(req.body).length > 0 ? JSON.stringify(req.body) : undefined,
     }).catch(err => {
       throw new Error(`SaaS connection failed: ${err.message}`);
     });
 
-    const { text, data, isJson, status } = await safeReadResponse(response);
-
-    if (isJson) {
-      return res.status(status).json(data);
-    } else {
-      return res.status(status).json({
-        success: response.ok,
-        error: "Non-JSON response from SaaS upstream",
-        detail: text,
-        status: status
-      });
-    }
+    const { text, data } = await readUpstreamResponse(response);
+    if (data) return res.status(response.status).json(data);
+    return res.status(response.status).json({
+      success: response.ok,
+      error: response.ok ? undefined : "SaaS upstream returned non-JSON response",
+      detail: text,
+      status: response.status
+    });
   } catch (error: any) {
     console.error("Local SaaS Proxy Error:", error);
     res.status(500).json({ 
@@ -122,24 +114,19 @@ app.post("/api/gemini", async (req, res) => {
         }
       });
       
-      const aiText = aiResponse.text || "{}";
-      let parsedResult = null;
+      let analysis = {};
       try {
-        parsedResult = JSON.parse(aiText);
-      } catch {}
-      
-      if (!parsedResult) {
-        return res.status(500).json({
+        analysis = aiResponse.text ? JSON.parse(aiResponse.text) : {};
+      } catch {
+        return res.status(502).json({
           success: false,
-          error: "Failed to parse JSON response from Gemini model",
-          detail: aiText,
-          status: 500
+          error: "Gemini returned invalid JSON",
+          detail: aiResponse.text || ""
         });
       }
-      
       return res.json({
         success: true,
-        ...parsedResult
+        ...analysis
       });
 
     } else if (type === 'generate') {
@@ -170,14 +157,14 @@ app.post("/api/gemini", async (req, res) => {
         });
       }
 
-      const { text: verifyText, data: verify, isJson: verifyIsJson, status: verifyStatus } = await safeReadResponse(verifyRes);
-      if (!verifyRes.ok || !verify || !verify.success) {
+      const { text: verifyText, data: verify } = await readUpstreamResponse(verifyRes);
+      if (!verifyRes.ok || !verify?.success) {
         console.warn("User verification failed:", verify || verifyText);
-        return res.status(verifyStatus || 403).json({
+        return res.status(403).json({
           success: false,
-          error: verify?.message || verify?.error || "User verification failed",
-          detail: verify || verifyText,
-          status: verifyStatus || 403
+          error: "User verification failed",
+          detail: verify || verifyText || verifyRes.statusText,
+          status: verifyRes.status
         });
       }
 
@@ -251,18 +238,18 @@ Instructions:
         });
       }
 
-      const { text: tokenText, data: tokenJson, isJson: tokenIsJson, status: tokenStatus } = await safeReadResponse(tokenRes);
+      const { text: tokenText, data: tokenJson } = await readUpstreamResponse(tokenRes);
 
       if (!tokenRes.ok || !tokenJson?.success && !tokenJson?.uploadUrl) {
         console.error("Direct token failed:", {
-          status: tokenStatus,
+          status: tokenRes.status,
           body: tokenJson || tokenText
         });
         return res.status(502).json({
           success: false,
           error: "Failed to get OSS upload token from SaaS",
           detail: tokenJson || tokenText,
-          status: tokenStatus
+          status: tokenRes.status
         });
       }
       const tokenData = tokenJson;
@@ -329,17 +316,17 @@ Instructions:
         });
       }
 
-      const { text: commitText, data: commitData, isJson: commitIsJson, status: commitStatus } = await safeReadResponse(commitRes);
+      const { text: commitText, data: commitData } = await readUpstreamResponse(commitRes);
 
       if (!commitRes.ok || commitData?.success === false) {
         console.error("Commit failed:", {
-          status: commitStatus,
+          status: commitRes.status,
           body: commitData || commitText
         });
         return res.status(502).json({
           success: false,
           error: "Upload commit failed with SaaS",
-          status: commitStatus,
+          status: commitRes.status,
           detail: commitData || commitText
         });
       }
@@ -360,10 +347,12 @@ Instructions:
       });
 
       if (consumeRes) {
-        const { text: consumeText, data: consumeData } = await safeReadResponse(consumeRes);
-        if (!consumeRes.ok) {
-          console.warn("Points consumption failed after success:", consumeData || consumeText);
+        const { text: consumeText, data: consume } = await readUpstreamResponse(consumeRes);
+        if (!consumeRes.ok || consume?.success === false) {
+          console.warn("Points consumption failed after success:", consume || consumeText);
         }
+      } else {
+        console.warn("Points consumption request failed, but image generation already succeeded.");
       }
 
       return res.json({
