@@ -1,7 +1,7 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { GoogleGenAI, Type } from "@google/genai";
 
-const SAAS_BASE = "http://aibigtree.com";
+const SAAS_BASE = process.env.SAAS_API_BASE || process.env.VITE_SAAS_API_BASE || "https://aibigtree.com";
 const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || "" });
 const APP_SOURCE = "serum-ai-e-com-generator";
 
@@ -123,49 +123,103 @@ Instructions:
         if (!generatedBase64) throw new Error("AI failed to generate image");
 
         const imageBuffer = Buffer.from(generatedBase64, 'base64');
+        const fileName = `${APP_SOURCE}_${Date.now()}.png`;
 
-        // Parallelize consume and token fetch to shave off a bit of time
-        const [consumeRes, tokenRes] = await Promise.all([
-          fetch(`${SAAS_BASE}/api/tool/consume`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ userId, toolId })
-          }),
-          fetch(`${SAAS_BASE}/api/upload/direct-token`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              userId, toolId, source: APP_SOURCE, mimeType: "image/png", 
-              fileName: `${APP_SOURCE}_${Date.now()}.png`, fileSize: imageBuffer.length
-            })
+        // 3. Request Direct Token
+        const tokenRes = await fetch(`${SAAS_BASE}/api/upload/direct-token`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            userId, 
+            toolId, 
+            source: APP_SOURCE, 
+            mimeType: "image/png", 
+            fileName, 
+            fileSize: imageBuffer.length
           })
-        ]);
+        });
 
-        if (!consumeRes.ok) {
-          const consume = await consumeRes.json();
-          throw new Error(consume.message || "Points consumption failed");
+        const tokenText = await tokenRes.text();
+        let tokenJson: any = null;
+        try { tokenJson = tokenText ? JSON.parse(tokenText) : null; } catch {}
+
+        if (!tokenRes.ok || !tokenJson?.success && !tokenJson?.uploadUrl) {
+          console.error("Direct token failed:", {
+            status: tokenRes.status,
+            statusText: tokenRes.statusText,
+            body: tokenJson || tokenText,
+            request: { userId, toolId, source: APP_SOURCE, fileName, fileSize: imageBuffer.length }
+          });
+          return res.status(502).json({
+            success: false,
+            error: "Failed to get OSS upload token",
+            detail: tokenJson || tokenText,
+            status: tokenRes.status
+          });
         }
+        const tokenData = tokenJson;
 
-        if (!tokenRes.ok) throw new Error("Failed to get OSS upload token");
-        const tokenData = await tokenRes.json();
-
-        // 3. Upload to OSS (this is the bottleneck)
-        await fetch(tokenData.uploadUrl, {
-          method: 'PUT',
+        // 4. Upload to OSS
+        const uploadRes = await fetch(tokenData.uploadUrl, {
+          method: tokenData.method || 'PUT',
           headers: tokenData.headers || { 'Content-Type': 'image/png' },
           body: imageBuffer
         });
 
-        // 4. Commit
+        if (!uploadRes.ok) {
+          const uploadText = await uploadRes.text().catch(() => "");
+          console.error("OSS upload failed:", uploadRes.status, uploadText);
+          return res.status(502).json({
+            success: false,
+            error: "OSS upload failed",
+            status: uploadRes.status,
+            detail: uploadText
+          });
+        }
+
+        // 5. Commit
         const commitRes = await fetch(`${SAAS_BASE}/api/upload/commit`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ 
-            userId, toolId, source: APP_SOURCE, 
-            objectKey: tokenData.objectKey, fileSize: imageBuffer.length 
+            userId, 
+            toolId, 
+            source: APP_SOURCE, 
+            objectKey: tokenData.objectKey, 
+            fileSize: imageBuffer.length 
           })
         });
-        const commitData = await commitRes.json();
+
+        const commitText = await commitRes.text();
+        let commitData: any = null;
+        try { commitData = commitText ? JSON.parse(commitText) : null; } catch {}
+
+        if (!commitRes.ok || commitData?.success === false) {
+          console.error("Commit failed:", {
+            status: commitRes.status,
+            body: commitData || commitText
+          });
+          return res.status(502).json({
+            success: false,
+            error: "Upload commit failed",
+            status: commitRes.status,
+            detail: commitData || commitText
+          });
+        }
+
+        // 6. Finally Consume Points (only if everything else succeeded)
+        const consumeRes = await fetch(`${SAAS_BASE}/api/tool/consume`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ userId, toolId })
+        });
+
+        if (!consumeRes.ok) {
+          const consume = await consumeRes.json();
+          console.warn("Points consumption failed after success:", consume.message);
+          // We don't fail the whole request here since the image is already saved,
+          // but we could if strict enforcement is needed.
+        }
 
         return res.json({
           success: true,

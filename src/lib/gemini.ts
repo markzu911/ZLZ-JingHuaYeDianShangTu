@@ -1,3 +1,4 @@
+/// <reference types="vite/client" />
 export interface AnalysisResult {
   title: string;
   sellingPoints: string[];
@@ -27,7 +28,8 @@ export async function analyzeProduct(base64Image: string): Promise<AnalysisResul
     if (response.status === 504) {
       throw new Error("GENERATION_TIMEOUT_BUT_MAY_HAVE_SAVED");
     }
-    throw new Error(data?.error || "Analysis failed");
+    const errorMessage = data?.detail?.message || data?.detail?.error || data?.error || "Analysis failed";
+    throw new Error(errorMessage);
   }
   
   return data;
@@ -50,13 +52,22 @@ export async function generateEcomBackground(
   userId?: string,
   toolId?: string
 ): Promise<string> {
+  const isDev = import.meta.env.DEV;
+  const context = (window as any).SAAS_CONTEXT;
+  const finalUserId = userId || context?.userId;
+  const finalToolId = toolId || context?.toolId;
+
+  if (!isDev && (!finalUserId || !finalToolId)) {
+    throw new Error("未获取到 SaaS 用户上下文，请从 SaaS 平台入口打开工具");
+  }
+
   const response = await fetch("/api/gemini", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       type: "generate",
-      userId: userId || (window as any).SAAS_CONTEXT?.userId || "dev_user",
-      toolId: toolId || (window as any).SAAS_CONTEXT?.toolId || "dev_tool",
+      userId: finalUserId || "dev_user",
+      toolId: finalToolId || "dev_tool",
       style,
       title,
       description,
@@ -79,7 +90,8 @@ export async function generateEcomBackground(
     if (response.status === 504) {
       throw new Error("GENERATION_TIMEOUT_BUT_MAY_HAVE_SAVED");
     }
-    throw new Error(data?.error || "Generation failed");
+    const errorMessage = data?.detail?.message || data?.detail?.error || data?.error || data?.detail || "Generation failed";
+    throw new Error(errorMessage);
   }
 
   return data.generatedUrl;

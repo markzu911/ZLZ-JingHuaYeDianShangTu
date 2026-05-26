@@ -8,7 +8,8 @@ dotenv.config();
 
 const app = express();
 const PORT = 3000;
-const SAAS_BASE = "http://aibigtree.com";
+const SAAS_BASE = process.env.SAAS_API_BASE || process.env.VITE_SAAS_API_BASE || "https://aibigtree.com";
+const APP_SOURCE = "serum-ai-e-com-generator";
 
 app.use(express.json({ limit: '50mb' }));
 
@@ -105,40 +106,101 @@ app.post("/api/gemini", async (req, res) => {
       if (!generatedBase64) throw new Error("AI Generation failed");
 
       const imageBuffer = Buffer.from(generatedBase64, 'base64');
+      const fileName = `${APP_SOURCE}_${Date.now()}.png`;
 
-      // Parallelize consume and token fetch
-      const [consumeRes, tokenRes] = await Promise.all([
-        fetch(`${SAAS_BASE}/api/tool/consume`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ userId, toolId })
-        }),
-        fetch(`${SAAS_BASE}/api/upload/direct-token`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            userId, toolId, source: "result", mimeType: "image/png", 
-            fileName: "generated.png", fileSize: imageBuffer.length
-          })
+      // 3. Request Direct Token
+      const tokenRes = await fetch(`${SAAS_BASE}/api/upload/direct-token`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userId, 
+          toolId, 
+          source: APP_SOURCE, 
+          mimeType: "image/png", 
+          fileName, 
+          fileSize: imageBuffer.length
         })
-      ]);
+      });
 
-      if (!consumeRes.ok) throw new Error("Points consumption failed");
-      if (!tokenRes.ok) throw new Error("Failed to get OSS upload token");
-      const tokenData = await tokenRes.json();
+      const tokenText = await tokenRes.text();
+      let tokenJson: any = null;
+      try { tokenJson = tokenText ? JSON.parse(tokenText) : null; } catch {}
 
-      await fetch(tokenData.uploadUrl, {
-        method: 'PUT',
+      if (!tokenRes.ok || !tokenJson?.success && !tokenJson?.uploadUrl) {
+        console.error("Direct token failed:", {
+          status: tokenRes.status,
+          statusText: tokenRes.statusText,
+          body: tokenJson || tokenText,
+          request: { userId, toolId, source: APP_SOURCE, fileName, fileSize: imageBuffer.length }
+        });
+        return res.status(502).json({
+          success: false,
+          error: "Failed to get OSS upload token",
+          detail: tokenJson || tokenText,
+          status: tokenRes.status
+        });
+      }
+      const tokenData = tokenJson;
+
+      // 4. Upload to OSS
+      const uploadRes = await fetch(tokenData.uploadUrl, {
+        method: tokenData.method || 'PUT',
         headers: tokenData.headers || { 'Content-Type': 'image/png' },
         body: imageBuffer
       });
 
+      if (!uploadRes.ok) {
+        const uploadText = await uploadRes.text().catch(() => "");
+        console.error("OSS upload failed:", uploadRes.status, uploadText);
+        return res.status(502).json({
+          success: false,
+          error: "OSS upload failed",
+          status: uploadRes.status,
+          detail: uploadText
+        });
+      }
+
+      // 5. Commit
       const commitRes = await fetch(`${SAAS_BASE}/api/upload/commit`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId, toolId, source: "result", objectKey: tokenData.objectKey, fileSize: imageBuffer.length })
+        body: JSON.stringify({ 
+          userId, 
+          toolId, 
+          source: APP_SOURCE, 
+          objectKey: tokenData.objectKey, 
+          fileSize: imageBuffer.length 
+        })
       });
-      const commitData = await commitRes.json();
+
+      const commitText = await commitRes.text();
+      let commitData: any = null;
+      try { commitData = commitText ? JSON.parse(commitText) : null; } catch {}
+
+      if (!commitRes.ok || commitData?.success === false) {
+        console.error("Commit failed:", {
+          status: commitRes.status,
+          body: commitData || commitText
+        });
+        return res.status(502).json({
+          success: false,
+          error: "Upload commit failed",
+          status: commitRes.status,
+          detail: commitData || commitText
+        });
+      }
+
+      // 6. Finally Consume Points
+      const consumeRes = await fetch(`${SAAS_BASE}/api/tool/consume`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId, toolId })
+      });
+
+      if (!consumeRes.ok) {
+        const consume = await consumeRes.json();
+        console.warn("Points consumption failed after success:", consume.message);
+      }
 
       res.json({
         success: true,
