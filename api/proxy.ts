@@ -5,11 +5,67 @@ const RAW_SAAS_BASE = process.env.SAAS_API_BASE || process.env.VITE_SAAS_API_BAS
 const SAAS_BASE = RAW_SAAS_BASE.includes("aibigtree.com") && !RAW_SAAS_BASE.includes("gemini-proxy") 
   ? RAW_SAAS_BASE.replace("aibigtree.com", "gemini-proxy.aibigtree.com") 
   : RAW_SAAS_BASE;
-const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || "" });
+
+const ai = new GoogleGenAI({ 
+  apiKey: process.env.GEMINI_API_KEY || "DUMMY_KEY",
+  httpOptions: {
+    headers: {
+      'User-Agent': 'aistudio-build',
+    }
+  }
+});
+
 const APP_SOURCE = "serum-ai-e-com-generator";
 
+const ANALYZE_MODEL = process.env.GEMINI_ANALYZE_MODEL || "gemini-3.5-flash";
+const IMAGE_MODEL = process.env.GEMINI_IMAGE_MODEL || "gemini-3.1-flash-image-preview";
+
+function getApiPath(req: VercelRequest): string {
+  const pathQuery = req.query.path;
+  if (pathQuery) {
+    if (Array.isArray(pathQuery)) {
+      return '/api/' + pathQuery.join('/');
+    }
+    return '/api/' + pathQuery;
+  }
+  return (req.url || '').split('?')[0];
+}
+
+function getSaasForwardUrl(req: VercelRequest, apiPath: string): string {
+  const queryParams = { ...req.query };
+  delete queryParams.path; 
+  
+  const searchParams = new URLSearchParams();
+  for (const [key, val] of Object.entries(queryParams)) {
+    if (val !== undefined) {
+      if (Array.isArray(val)) {
+        val.forEach(v => searchParams.append(key, v));
+      } else {
+        searchParams.append(key, val.toString());
+      }
+    }
+  }
+  
+  const queryString = searchParams.toString();
+  return `${SAAS_BASE}${apiPath}${queryString ? '?' + queryString : ''}`;
+}
+
+async function safeReadResponse(response: any) {
+  const text = await response.text().catch(() => "");
+  let data = null;
+  let isJson = false;
+  try {
+    if (text) {
+      data = JSON.parse(text);
+      isJson = true;
+    }
+  } catch (err) {
+    // Not valid JSON
+  }
+  return { text, data, isJson, status: response.status, ok: response.ok };
+}
+
 export default async function handler(req: VercelRequest, res: VercelResponse) {
-  // 1. CORS Configuration
   res.setHeader('Access-Control-Allow-Credentials', 'true');
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS,PATCH,DELETE,POST,PUT');
@@ -23,13 +79,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return;
   }
 
-  const { url = '' } = req;
-  const path = url.split('?')[0];
+  const apiPath = getApiPath(req);
 
-  // 2. Handle SaaS Tool Requests (Forwarding)
-  if (path.startsWith('/api/tool/') || path.startsWith('/api/upload/')) {
+  // 1. SaaS Proxy (matching newer path checking)
+  if (apiPath.startsWith('/api/tool/') || apiPath.startsWith('/api/upload/')) {
     try {
-      const saasUrl = `${SAAS_BASE}${url}`;
+      const saasUrl = getSaasForwardUrl(req, apiPath);
       console.log(`Forwarding request to: ${saasUrl} (${req.method})`);
       
       const response = await fetch(saasUrl, {
@@ -39,30 +94,50 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           'User-Agent': 'Serum-AI-Generator/1.0',
         },
         body: req.method !== 'GET' ? JSON.stringify(req.body) : undefined,
+      }).catch(err => {
+        throw new Error(`SaaS connection failed: ${err.message}`);
       });
 
-      const data = await response.json();
-      return res.status(response.status).json(data);
+      const { text, data, isJson, status } = await safeReadResponse(response);
+
+      if (isJson) {
+        return res.status(status).json(data);
+      } else {
+        return res.status(status).json({
+          success: response.ok,
+          error: "Non-JSON response from SaaS upstream",
+          detail: text,
+          status: status
+        });
+      }
     } catch (error: any) {
-      console.error(`SaaS Proxy Fetch Error (${url}):`, error);
+      console.error(`SaaS Proxy Fetch Error (${apiPath}):`, error);
       return res.status(500).json({ 
         success: false, 
         error: error.message,
-        url: `${SAAS_BASE}${url}`
+        detail: null,
+        status: 500
       });
     }
   }
 
-  // 3. Handle Gemini Generation
-  if (path === '/api/gemini' && req.method === 'POST') {
+  // 2. Gemini Consolidated Endpoint
+  if (apiPath === '/api/gemini' && req.method === 'POST') {
+    if (!process.env.GEMINI_API_KEY) {
+      return res.status(500).json({
+        success: false,
+        error: "Missing GEMINI_API_KEY on server",
+        status: 500
+      });
+    }
+
     const { type, ...params } = req.body;
 
     try {
       if (type === 'analyze') {
         const { image } = params;
-        const model = "gemini-3-flash-preview";
         const aiResponse = await ai.models.generateContent({
-          model,
+          model: ANALYZE_MODEL,
           contents: {
             parts: [
               { inlineData: { data: image.split(',')[1] || image, mimeType: "image/png" } },
@@ -83,11 +158,29 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             }
           }
         });
-        return res.json(JSON.parse(aiResponse.text || "{}"));
+        
+        const aiText = aiResponse.text || "{}";
+        let parsedResult = null;
+        try {
+          parsedResult = JSON.parse(aiText);
+        } catch {}
+        
+        if (!parsedResult) {
+          return res.status(500).json({
+            success: false,
+            error: "Failed to parse JSON response from Gemini model",
+            detail: aiText,
+            status: 500
+          });
+        }
+        
+        return res.json({
+          success: true,
+          ...parsedResult
+        });
 
       } else if (type === 'generate') {
-         // Full generation + SaaS save flow logic
-         const { 
+        const { 
           userId, toolId, style, aspectRatio, imageSize, 
           productImage, perspective, title, description 
         } = params;
@@ -103,17 +196,29 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           body: JSON.stringify({ userId, toolId })
         }).catch(err => {
           console.error(`Fetch error at verify:`, err);
-          throw new Error(`Connection to SaaS failed at verify: ${err.message}`);
+          return null;
         });
 
-        const verify = await verifyRes.json();
-        if (!verifyRes.ok || !verify.success) {
-          console.warn("User verification failed:", verify);
-          return res.status(403).json(verify);
+        if (!verifyRes) {
+          return res.status(502).json({
+            success: false,
+            error: "Connection to SaaS failed at verify",
+            status: 502
+          });
+        }
+
+        const { text: verifyText, data: verify, isJson: verifyIsJson, status: verifyStatus } = await safeReadResponse(verifyRes);
+        if (!verifyRes.ok || !verify || !verify.success) {
+          console.warn("User verification failed:", verify || verifyText);
+          return res.status(verifyStatus || 403).json({
+            success: false,
+            error: verify?.message || verify?.error || "User verification failed",
+            detail: verify || verifyText,
+            status: verifyStatus || 403
+          });
         }
 
         // Generate
-        const model = "gemini-3.1-flash-image-preview";
         const promptText = `Task: Professional e-commerce product enhancement.
 Instructions:
 1. Identify product in image.
@@ -124,7 +229,7 @@ Instructions:
 
         const imageBase64Data = productImage.split(',')[1] || productImage;
         const aiResponse = await ai.models.generateContent({
-          model,
+          model: IMAGE_MODEL,
           contents: {
             parts: [
               { inlineData: { data: imageBase64Data, mimeType: "image/png" } },
@@ -141,7 +246,14 @@ Instructions:
         for (const part of aiResponse.candidates?.[0]?.content.parts || []) {
           if (part.inlineData) { generatedBase64 = part.inlineData.data; break; }
         }
-        if (!generatedBase64) throw new Error("AI failed to generate image");
+        if (!generatedBase64) {
+          return res.status(500).json({
+            success: false,
+            error: "AI failed to generate image from prompt",
+            detail: aiResponse,
+            status: 500
+          });
+        }
 
         const imageBuffer = Buffer.from(generatedBase64, 'base64');
         const fileName = `${APP_SOURCE}_${Date.now()}.png`;
@@ -165,25 +277,29 @@ Instructions:
           })
         }).catch(err => {
           console.error(`Fetch error at direct-token:`, err);
-          throw new Error(`Connection to SaaS failed at direct-token: ${err.message}`);
+          return null;
         });
 
-        const tokenText = await tokenRes.text();
-        let tokenJson: any = null;
-        try { tokenJson = tokenText ? JSON.parse(tokenText) : null; } catch {}
+        if (!tokenRes) {
+          return res.status(502).json({
+            success: false,
+            error: "Connection to SaaS failed at direct-token",
+            status: 502
+          });
+        }
+
+        const { text: tokenText, data: tokenJson, isJson: tokenIsJson, status: tokenStatus } = await safeReadResponse(tokenRes);
 
         if (!tokenRes.ok || !tokenJson?.success && !tokenJson?.uploadUrl) {
           console.error("Direct token failed:", {
-            status: tokenRes.status,
-            statusText: tokenRes.statusText,
-            body: tokenJson || tokenText,
-            request: { userId, toolId, source: APP_SOURCE, fileName, fileSize: imageBuffer.length }
+            status: tokenStatus,
+            body: tokenJson || tokenText
           });
           return res.status(502).json({
             success: false,
-            error: "Failed to get OSS upload token",
+            error: "Failed to get OSS upload token from SaaS",
             detail: tokenJson || tokenText,
-            status: tokenRes.status
+            status: tokenStatus
           });
         }
         const tokenData = tokenJson;
@@ -199,15 +315,23 @@ Instructions:
           body: imageBuffer
         }).catch(err => {
           console.error(`Fetch error at OSS upload:`, err);
-          throw new Error(`Connection to OSS failed: ${err.message}`);
+          return null;
         });
+
+        if (!uploadRes) {
+          return res.status(502).json({
+            success: false,
+            error: "Connection to OSS upload destination failed",
+            status: 502
+          });
+        }
 
         if (!uploadRes.ok) {
           const uploadText = await uploadRes.text().catch(() => "");
           console.error("OSS upload failed:", uploadRes.status, uploadText);
           return res.status(502).json({
             success: false,
-            error: "OSS upload failed",
+            error: "OSS upload failed with remote service",
             status: uploadRes.status,
             detail: uploadText
           });
@@ -231,27 +355,33 @@ Instructions:
           })
         }).catch(err => {
           console.error(`Fetch error at commit:`, err);
-          throw new Error(`Connection to SaaS failed at commit: ${err.message}`);
+          return null;
         });
 
-        const commitText = await commitRes.text();
-        let commitData: any = null;
-        try { commitData = commitText ? JSON.parse(commitText) : null; } catch {}
+        if (!commitRes) {
+          return res.status(502).json({
+            success: false,
+            error: "Connection to SaaS failed at commit",
+            status: 502
+          });
+        }
+
+        const { text: commitText, data: commitData, isJson: commitIsJson, status: commitStatus } = await safeReadResponse(commitRes);
 
         if (!commitRes.ok || commitData?.success === false) {
           console.error("Commit failed:", {
-            status: commitRes.status,
+            status: commitStatus,
             body: commitData || commitText
           });
           return res.status(502).json({
             success: false,
-            error: "Upload commit failed",
-            status: commitRes.status,
+            error: "Upload commit failed with SaaS",
+            status: commitStatus,
             detail: commitData || commitText
           });
         }
 
-        // 6. Finally Consume Points (only if everything else succeeded)
+        // 6. Finally Consume Points (safely catch and log warnings)
         const consumeUrl = `${SAAS_BASE}/api/tool/consume`;
         console.log(`Consuming points: ${consumeUrl}`);
         const consumeRes = await fetch(consumeUrl, {
@@ -263,14 +393,14 @@ Instructions:
           body: JSON.stringify({ userId, toolId })
         }).catch(err => {
           console.warn(`Fetch error at consume (non-fatal):`, err);
-          return null; // Don't fail the whole request
+          return null;
         });
 
-        if (!consumeRes.ok) {
-          const consume = await consumeRes.json();
-          console.warn("Points consumption failed after success:", consume.message);
-          // We don't fail the whole request here since the image is already saved,
-          // but we could if strict enforcement is needed.
+        if (consumeRes) {
+          const { text: consumeText, data: consumeData } = await safeReadResponse(consumeRes);
+          if (!consumeRes.ok) {
+            console.warn("Points consumption failed after success:", consumeData || consumeText);
+          }
         }
 
         return res.json({
@@ -281,7 +411,12 @@ Instructions:
       }
     } catch (error: any) {
       console.error("Gemini Proxy Error:", error);
-      return res.status(500).json({ error: error.message });
+      return res.status(500).json({
+        success: false,
+        error: error.message || "Internal server error during Gemini processing",
+        detail: error.stack || null,
+        status: 500
+      });
     }
   }
 

@@ -157,7 +157,14 @@ export default function App() {
           toolId: context.toolId,
         }),
       });
-      const data = await res.json();
+      const text = await res.text().catch(() => "");
+      let data: any = null;
+      try {
+        data = text ? JSON.parse(text) : null;
+      } catch {}
+      if (!data) {
+        data = { success: false, error: "Empty or invalid response from server", detail: text };
+      }
       if (data.success && data.data?.user?.integral !== undefined) {
         setUserIntegral(data.data.user.integral);
         setSaasContext((prev: any) => ({ ...prev, ...data.data.user }));
@@ -338,7 +345,14 @@ export default function App() {
             const res = await fetch(
               `/api/upload/image?userId=${userId}&role=${role || 1}&toolId=${toolId || ""}&source=${APP_SOURCE}`,
             );
-            const result = await res.json();
+            const text = await res.text().catch(() => "");
+            let result: any = null;
+            try {
+              result = text ? JSON.parse(text) : null;
+            } catch {}
+            if (!result) {
+              result = { success: false, error: "Empty or invalid response from server", detail: text };
+            }
 
             if (result.success && result.data && result.data.length > 0) {
               const appImages = result.data.filter((img: any) => {
@@ -447,7 +461,14 @@ export default function App() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ id: item.id, userId, role: role || 1 }),
       });
-      const result = await res.json();
+      const text = await res.text().catch(() => "");
+      let result: any = null;
+      try {
+        result = text ? JSON.parse(text) : null;
+      } catch {}
+      if (!result) {
+        result = { success: false, error: "Empty or invalid response from server", detail: text };
+      }
       if (result.success) {
         setHistory((prev) => prev.filter((h) => h.id !== item.id));
       }

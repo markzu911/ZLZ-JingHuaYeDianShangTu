@@ -17,9 +17,34 @@ const APP_SOURCE = "serum-ai-e-com-generator";
 app.use(express.json({ limit: '50mb' }));
 
 // Gemini Config
-const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || "" });
+const ai = new GoogleGenAI({ 
+  apiKey: process.env.GEMINI_API_KEY || "DUMMY_KEY",
+  httpOptions: {
+    headers: {
+      'User-Agent': 'aistudio-build',
+    }
+  }
+});
 
-// 1. SaaS Proxy (matching Vercel proxy.ts logic)
+const ANALYZE_MODEL = process.env.GEMINI_ANALYZE_MODEL || "gemini-3.5-flash";
+const IMAGE_MODEL = process.env.GEMINI_IMAGE_MODEL || "gemini-3.1-flash-image-preview";
+
+async function safeReadResponse(response: any) {
+  const text = await response.text().catch(() => "");
+  let data = null;
+  let isJson = false;
+  try {
+    if (text) {
+      data = JSON.parse(text);
+      isJson = true;
+    }
+  } catch (err) {
+    // Not valid JSON
+  }
+  return { text, data, isJson, status: response.status, ok: response.ok };
+}
+
+// 1. SaaS Proxy
 app.all(['/api/tool/*', '/api/upload/*'], async (req, res) => {
   try {
     const saasUrl = `${SAAS_BASE}${req.url}`;
@@ -32,29 +57,50 @@ app.all(['/api/tool/*', '/api/upload/*'], async (req, res) => {
         'User-Agent': 'Serum-AI-Generator/1.0'
       },
       body: req.method !== 'GET' ? JSON.stringify(req.body) : undefined,
+    }).catch(err => {
+      throw new Error(`SaaS connection failed: ${err.message}`);
     });
-    const data = await response.json();
-    res.status(response.status).json(data);
+
+    const { text, data, isJson, status } = await safeReadResponse(response);
+
+    if (isJson) {
+      return res.status(status).json(data);
+    } else {
+      return res.status(status).json({
+        success: response.ok,
+        error: "Non-JSON response from SaaS upstream",
+        detail: text,
+        status: status
+      });
+    }
   } catch (error: any) {
     console.error("Local SaaS Proxy Error:", error);
     res.status(500).json({ 
       success: false, 
       error: error.message,
-      url: `${SAAS_BASE}${req.url}`
+      detail: null,
+      status: 500
     });
   }
 });
 
 // 2. Gemini Consolidated Endpoint
 app.post("/api/gemini", async (req, res) => {
+  if (!process.env.GEMINI_API_KEY) {
+    return res.status(500).json({
+      success: false,
+      error: "Missing GEMINI_API_KEY on server",
+      status: 500
+    });
+  }
+
   const { type, ...params } = req.body;
 
   try {
     if (type === 'analyze') {
       const { image } = params;
-      const model = "gemini-3-flash-preview";
-      const response = await ai.models.generateContent({
-        model,
+      const aiResponse = await ai.models.generateContent({
+        model: ANALYZE_MODEL,
         contents: {
           parts: [
             { inlineData: { data: image.split(',')[1] || image, mimeType: "image/png" } },
@@ -75,7 +121,26 @@ app.post("/api/gemini", async (req, res) => {
           }
         }
       });
-      res.json(JSON.parse(response.text || "{}"));
+      
+      const aiText = aiResponse.text || "{}";
+      let parsedResult = null;
+      try {
+        parsedResult = JSON.parse(aiText);
+      } catch {}
+      
+      if (!parsedResult) {
+        return res.status(500).json({
+          success: false,
+          error: "Failed to parse JSON response from Gemini model",
+          detail: aiText,
+          status: 500
+        });
+      }
+      
+      return res.json({
+        success: true,
+        ...parsedResult
+      });
 
     } else if (type === 'generate') {
       const { 
@@ -94,21 +159,40 @@ app.post("/api/gemini", async (req, res) => {
         body: JSON.stringify({ userId, toolId })
       }).catch(err => {
         console.error(`Fetch error at verify:`, err);
-        throw new Error(`Connection to SaaS failed at verify: ${err.message}`);
+        return null;
       });
-      const verify = await verifyRes.json();
-      if (!verifyRes.ok || !verify.success) {
-        console.warn("User verification failed:", verify);
-        return res.status(403).json(verify);
+
+      if (!verifyRes) {
+        return res.status(502).json({
+          success: false,
+          error: "Connection to SaaS failed at verify",
+          status: 502
+        });
+      }
+
+      const { text: verifyText, data: verify, isJson: verifyIsJson, status: verifyStatus } = await safeReadResponse(verifyRes);
+      if (!verifyRes.ok || !verify || !verify.success) {
+        console.warn("User verification failed:", verify || verifyText);
+        return res.status(verifyStatus || 403).json({
+          success: false,
+          error: verify?.message || verify?.error || "User verification failed",
+          detail: verify || verifyText,
+          status: verifyStatus || 403
+        });
       }
 
       // Generate
-      const model = "gemini-3.1-flash-image-preview";
-      const promptText = `Task: Professional e-commerce product enhancement. Instructions: Identify product, style: ${style}, perspective: ${perspective || 'default'}, title: ${title}. No text overlays.`;
-      const imageBase64Data = productImage.split(',')[1] || productImage;
+      const promptText = `Task: Professional e-commerce product enhancement.
+Instructions:
+1. Identify product in image.
+2. Style: ${style}.
+3. Perspective: ${perspective || 'default'}.
+4. Context: ${title} - ${description}.
+5. Realistic lighting, shadows, original product integrity. No text.`;
 
+      const imageBase64Data = productImage.split(',')[1] || productImage;
       const aiResponse = await ai.models.generateContent({
-        model,
+        model: IMAGE_MODEL,
         contents: {
           parts: [
             { inlineData: { data: imageBase64Data, mimeType: "image/png" } },
@@ -125,7 +209,14 @@ app.post("/api/gemini", async (req, res) => {
       for (const part of aiResponse.candidates?.[0]?.content.parts || []) {
         if (part.inlineData) { generatedBase64 = part.inlineData.data; break; }
       }
-      if (!generatedBase64) throw new Error("AI Generation failed");
+      if (!generatedBase64) {
+        return res.status(500).json({
+          success: false,
+          error: "AI failed to generate image from prompt",
+          detail: aiResponse,
+          status: 500
+        });
+      }
 
       const imageBuffer = Buffer.from(generatedBase64, 'base64');
       const fileName = `${APP_SOURCE}_${Date.now()}.png`;
@@ -149,25 +240,29 @@ app.post("/api/gemini", async (req, res) => {
         })
       }).catch(err => {
         console.error(`Fetch error at direct-token:`, err);
-        throw new Error(`Connection to SaaS failed at direct-token: ${err.message}`);
+        return null;
       });
 
-      const tokenText = await tokenRes.text();
-      let tokenJson: any = null;
-      try { tokenJson = tokenText ? JSON.parse(tokenText) : null; } catch {}
+      if (!tokenRes) {
+        return res.status(502).json({
+          success: false,
+          error: "Connection to SaaS failed at direct-token",
+          status: 502
+        });
+      }
+
+      const { text: tokenText, data: tokenJson, isJson: tokenIsJson, status: tokenStatus } = await safeReadResponse(tokenRes);
 
       if (!tokenRes.ok || !tokenJson?.success && !tokenJson?.uploadUrl) {
         console.error("Direct token failed:", {
-          status: tokenRes.status,
-          statusText: tokenRes.statusText,
-          body: tokenJson || tokenText,
-          request: { userId, toolId, source: APP_SOURCE, fileName, fileSize: imageBuffer.length }
+          status: tokenStatus,
+          body: tokenJson || tokenText
         });
         return res.status(502).json({
           success: false,
-          error: "Failed to get OSS upload token",
+          error: "Failed to get OSS upload token from SaaS",
           detail: tokenJson || tokenText,
-          status: tokenRes.status
+          status: tokenStatus
         });
       }
       const tokenData = tokenJson;
@@ -183,15 +278,23 @@ app.post("/api/gemini", async (req, res) => {
         body: imageBuffer
       }).catch(err => {
         console.error(`Fetch error at OSS upload:`, err);
-        throw new Error(`Connection to OSS failed: ${err.message}`);
+        return null;
       });
+
+      if (!uploadRes) {
+        return res.status(502).json({
+          success: false,
+          error: "Connection to OSS upload destination failed",
+          status: 502
+        });
+      }
 
       if (!uploadRes.ok) {
         const uploadText = await uploadRes.text().catch(() => "");
         console.error("OSS upload failed:", uploadRes.status, uploadText);
         return res.status(502).json({
           success: false,
-          error: "OSS upload failed",
+          error: "OSS upload failed with remote service",
           status: uploadRes.status,
           detail: uploadText
         });
@@ -215,27 +318,33 @@ app.post("/api/gemini", async (req, res) => {
         })
       }).catch(err => {
         console.error(`Fetch error at commit:`, err);
-        throw new Error(`Connection to SaaS failed at commit: ${err.message}`);
+        return null;
       });
 
-      const commitText = await commitRes.text();
-      let commitData: any = null;
-      try { commitData = commitText ? JSON.parse(commitText) : null; } catch {}
+      if (!commitRes) {
+        return res.status(502).json({
+          success: false,
+          error: "Connection to SaaS failed at commit",
+          status: 502
+        });
+      }
+
+      const { text: commitText, data: commitData, isJson: commitIsJson, status: commitStatus } = await safeReadResponse(commitRes);
 
       if (!commitRes.ok || commitData?.success === false) {
         console.error("Commit failed:", {
-          status: commitRes.status,
+          status: commitStatus,
           body: commitData || commitText
         });
         return res.status(502).json({
           success: false,
-          error: "Upload commit failed",
-          status: commitRes.status,
+          error: "Upload commit failed with SaaS",
+          status: commitStatus,
           detail: commitData || commitText
         });
       }
 
-      // 6. Finally Consume Points
+      // 6. Finally Consume Points (safely catch and log warnings)
       const consumeUrl = `${SAAS_BASE}/api/tool/consume`;
       console.log(`Consuming points: ${consumeUrl}`);
       const consumeRes = await fetch(consumeUrl, {
@@ -250,12 +359,14 @@ app.post("/api/gemini", async (req, res) => {
         return null;
       });
 
-      if (!consumeRes.ok) {
-        const consume = await consumeRes.json();
-        console.warn("Points consumption failed after success:", consume.message);
+      if (consumeRes) {
+        const { text: consumeText, data: consumeData } = await safeReadResponse(consumeRes);
+        if (!consumeRes.ok) {
+          console.warn("Points consumption failed after success:", consumeData || consumeText);
+        }
       }
 
-      res.json({
+      return res.json({
         success: true,
         image: commitData.image || commitData,
         generatedUrl: `data:image/png;base64,${generatedBase64}`
@@ -263,7 +374,12 @@ app.post("/api/gemini", async (req, res) => {
     }
   } catch (error: any) {
     console.error("Gemini Local Error:", error);
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ 
+      success: false, 
+      error: error.message || "Internal server error during Gemini processing",
+      detail: error.stack || null,
+      status: 500
+    });
   }
 });
 
