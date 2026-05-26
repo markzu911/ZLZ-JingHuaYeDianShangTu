@@ -1,7 +1,7 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { GoogleGenAI, Type } from "@google/genai";
 
-const SAAS_BASE = process.env.SAAS_API_BASE || process.env.VITE_SAAS_API_BASE || "https://aibigtree.com";
+const SAAS_BASE = process.env.SAAS_API_BASE || process.env.VITE_SAAS_API_BASE || "https://gemini-proxy.aibigtree.com";
 const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || "" });
 const APP_SOURCE = "serum-ai-e-com-generator";
 
@@ -27,10 +27,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (path.startsWith('/api/tool/') || path.startsWith('/api/upload/')) {
     try {
       const saasUrl = `${SAAS_BASE}${url}`;
+      console.log(`Forwarding request to: ${saasUrl} (${req.method})`);
+      
       const response = await fetch(saasUrl, {
         method: req.method,
         headers: {
           'Content-Type': 'application/json',
+          'User-Agent': 'Serum-AI-Generator/1.0',
         },
         body: req.method !== 'GET' ? JSON.stringify(req.body) : undefined,
       });
@@ -38,8 +41,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const data = await response.json();
       return res.status(response.status).json(data);
     } catch (error: any) {
-      console.error("SaaS Proxy Error:", error);
-      return res.status(500).json({ success: false, error: error.message });
+      console.error(`SaaS Proxy Fetch Error (${url}):`, error);
+      return res.status(500).json({ 
+        success: false, 
+        error: error.message,
+        url: `${SAAS_BASE}${url}`
+      });
     }
   }
 
@@ -82,14 +89,25 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           productImage, perspective, title, description 
         } = params;
 
-        // Verify
-        const verifyRes = await fetch(`${SAAS_BASE}/api/tool/verify`, {
+        const verifyUrl = `${SAAS_BASE}/api/tool/verify`;
+        console.log(`Verifying user: ${verifyUrl}`);
+        const verifyRes = await fetch(verifyUrl, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: { 
+            'Content-Type': 'application/json',
+            'User-Agent': 'Serum-AI-Generator/1.0'
+          },
           body: JSON.stringify({ userId, toolId })
+        }).catch(err => {
+          console.error(`Fetch error at verify:`, err);
+          throw new Error(`Connection to SaaS failed at verify: ${err.message}`);
         });
+
         const verify = await verifyRes.json();
-        if (!verifyRes.ok || !verify.success) return res.status(403).json(verify);
+        if (!verifyRes.ok || !verify.success) {
+          console.warn("User verification failed:", verify);
+          return res.status(403).json(verify);
+        }
 
         // Generate
         const model = "gemini-3.1-flash-image-preview";
@@ -126,9 +144,14 @@ Instructions:
         const fileName = `${APP_SOURCE}_${Date.now()}.png`;
 
         // 3. Request Direct Token
-        const tokenRes = await fetch(`${SAAS_BASE}/api/upload/direct-token`, {
+        const tokenUrl = `${SAAS_BASE}/api/upload/direct-token`;
+        console.log(`Requesting token: ${tokenUrl}`);
+        const tokenRes = await fetch(tokenUrl, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: { 
+            'Content-Type': 'application/json',
+            'User-Agent': 'Serum-AI-Generator/1.0'
+          },
           body: JSON.stringify({
             userId, 
             toolId, 
@@ -137,6 +160,9 @@ Instructions:
             fileName, 
             fileSize: imageBuffer.length
           })
+        }).catch(err => {
+          console.error(`Fetch error at direct-token:`, err);
+          throw new Error(`Connection to SaaS failed at direct-token: ${err.message}`);
         });
 
         const tokenText = await tokenRes.text();
@@ -160,10 +186,17 @@ Instructions:
         const tokenData = tokenJson;
 
         // 4. Upload to OSS
+        console.log(`Uploading to OSS: ${tokenData.uploadUrl.split('?')[0]}`);
         const uploadRes = await fetch(tokenData.uploadUrl, {
           method: tokenData.method || 'PUT',
-          headers: tokenData.headers || { 'Content-Type': 'image/png' },
+          headers: {
+            ...(tokenData.headers || {}),
+            'User-Agent': 'Serum-AI-Generator/1.0'
+          },
           body: imageBuffer
+        }).catch(err => {
+          console.error(`Fetch error at OSS upload:`, err);
+          throw new Error(`Connection to OSS failed: ${err.message}`);
         });
 
         if (!uploadRes.ok) {
@@ -178,9 +211,14 @@ Instructions:
         }
 
         // 5. Commit
-        const commitRes = await fetch(`${SAAS_BASE}/api/upload/commit`, {
+        const commitUrl = `${SAAS_BASE}/api/upload/commit`;
+        console.log(`Committing upload: ${commitUrl}`);
+        const commitRes = await fetch(commitUrl, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: { 
+            'Content-Type': 'application/json',
+            'User-Agent': 'Serum-AI-Generator/1.0'
+          },
           body: JSON.stringify({ 
             userId, 
             toolId, 
@@ -188,6 +226,9 @@ Instructions:
             objectKey: tokenData.objectKey, 
             fileSize: imageBuffer.length 
           })
+        }).catch(err => {
+          console.error(`Fetch error at commit:`, err);
+          throw new Error(`Connection to SaaS failed at commit: ${err.message}`);
         });
 
         const commitText = await commitRes.text();
@@ -208,10 +249,18 @@ Instructions:
         }
 
         // 6. Finally Consume Points (only if everything else succeeded)
-        const consumeRes = await fetch(`${SAAS_BASE}/api/tool/consume`, {
+        const consumeUrl = `${SAAS_BASE}/api/tool/consume`;
+        console.log(`Consuming points: ${consumeUrl}`);
+        const consumeRes = await fetch(consumeUrl, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: { 
+            'Content-Type': 'application/json',
+            'User-Agent': 'Serum-AI-Generator/1.0'
+          },
           body: JSON.stringify({ userId, toolId })
+        }).catch(err => {
+          console.warn(`Fetch error at consume (non-fatal):`, err);
+          return null; // Don't fail the whole request
         });
 
         if (!consumeRes.ok) {

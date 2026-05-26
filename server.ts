@@ -8,7 +8,7 @@ dotenv.config();
 
 const app = express();
 const PORT = 3000;
-const SAAS_BASE = process.env.SAAS_API_BASE || process.env.VITE_SAAS_API_BASE || "https://aibigtree.com";
+const SAAS_BASE = process.env.SAAS_API_BASE || process.env.VITE_SAAS_API_BASE || "https://gemini-proxy.aibigtree.com";
 const APP_SOURCE = "serum-ai-e-com-generator";
 
 app.use(express.json({ limit: '50mb' }));
@@ -20,16 +20,25 @@ const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || "" });
 app.all(['/api/tool/*', '/api/upload/*'], async (req, res) => {
   try {
     const saasUrl = `${SAAS_BASE}${req.url}`;
+    console.log(`Forwarding request to: ${saasUrl} (${req.method})`);
+    
     const response = await fetch(saasUrl, {
       method: req.method,
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 
+        'Content-Type': 'application/json',
+        'User-Agent': 'Serum-AI-Generator/1.0'
+      },
       body: req.method !== 'GET' ? JSON.stringify(req.body) : undefined,
     });
     const data = await response.json();
     res.status(response.status).json(data);
   } catch (error: any) {
     console.error("Local SaaS Proxy Error:", error);
-    res.status(500).json({ success: false, error: error.message });
+    res.status(500).json({ 
+      success: false, 
+      error: error.message,
+      url: `${SAAS_BASE}${req.url}`
+    });
   }
 });
 
@@ -71,14 +80,24 @@ app.post("/api/gemini", async (req, res) => {
         productImage, perspective, title, description 
       } = params;
 
-      // Verify
-      const verifyRes = await fetch(`${SAAS_BASE}/api/tool/verify`, {
+      const verifyUrl = `${SAAS_BASE}/api/tool/verify`;
+      console.log(`Verifying user: ${verifyUrl}`);
+      const verifyRes = await fetch(verifyUrl, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+          'User-Agent': 'Serum-AI-Generator/1.0'
+        },
         body: JSON.stringify({ userId, toolId })
+      }).catch(err => {
+        console.error(`Fetch error at verify:`, err);
+        throw new Error(`Connection to SaaS failed at verify: ${err.message}`);
       });
       const verify = await verifyRes.json();
-      if (!verifyRes.ok || !verify.success) return res.status(403).json(verify);
+      if (!verifyRes.ok || !verify.success) {
+        console.warn("User verification failed:", verify);
+        return res.status(403).json(verify);
+      }
 
       // Generate
       const model = "gemini-3.1-flash-image-preview";
@@ -109,9 +128,14 @@ app.post("/api/gemini", async (req, res) => {
       const fileName = `${APP_SOURCE}_${Date.now()}.png`;
 
       // 3. Request Direct Token
-      const tokenRes = await fetch(`${SAAS_BASE}/api/upload/direct-token`, {
+      const tokenUrl = `${SAAS_BASE}/api/upload/direct-token`;
+      console.log(`Requesting token: ${tokenUrl}`);
+      const tokenRes = await fetch(tokenUrl, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+          'User-Agent': 'Serum-AI-Generator/1.0'
+        },
         body: JSON.stringify({
           userId, 
           toolId, 
@@ -120,6 +144,9 @@ app.post("/api/gemini", async (req, res) => {
           fileName, 
           fileSize: imageBuffer.length
         })
+      }).catch(err => {
+        console.error(`Fetch error at direct-token:`, err);
+        throw new Error(`Connection to SaaS failed at direct-token: ${err.message}`);
       });
 
       const tokenText = await tokenRes.text();
@@ -143,10 +170,17 @@ app.post("/api/gemini", async (req, res) => {
       const tokenData = tokenJson;
 
       // 4. Upload to OSS
+      console.log(`Uploading to OSS: ${tokenData.uploadUrl.split('?')[0]}`);
       const uploadRes = await fetch(tokenData.uploadUrl, {
         method: tokenData.method || 'PUT',
-        headers: tokenData.headers || { 'Content-Type': 'image/png' },
+        headers: {
+          ...(tokenData.headers || {}),
+          'User-Agent': 'Serum-AI-Generator/1.0'
+        },
         body: imageBuffer
+      }).catch(err => {
+        console.error(`Fetch error at OSS upload:`, err);
+        throw new Error(`Connection to OSS failed: ${err.message}`);
       });
 
       if (!uploadRes.ok) {
@@ -161,9 +195,14 @@ app.post("/api/gemini", async (req, res) => {
       }
 
       // 5. Commit
-      const commitRes = await fetch(`${SAAS_BASE}/api/upload/commit`, {
+      const commitUrl = `${SAAS_BASE}/api/upload/commit`;
+      console.log(`Committing upload: ${commitUrl}`);
+      const commitRes = await fetch(commitUrl, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+          'User-Agent': 'Serum-AI-Generator/1.0'
+        },
         body: JSON.stringify({ 
           userId, 
           toolId, 
@@ -171,6 +210,9 @@ app.post("/api/gemini", async (req, res) => {
           objectKey: tokenData.objectKey, 
           fileSize: imageBuffer.length 
         })
+      }).catch(err => {
+        console.error(`Fetch error at commit:`, err);
+        throw new Error(`Connection to SaaS failed at commit: ${err.message}`);
       });
 
       const commitText = await commitRes.text();
@@ -191,10 +233,18 @@ app.post("/api/gemini", async (req, res) => {
       }
 
       // 6. Finally Consume Points
-      const consumeRes = await fetch(`${SAAS_BASE}/api/tool/consume`, {
+      const consumeUrl = `${SAAS_BASE}/api/tool/consume`;
+      console.log(`Consuming points: ${consumeUrl}`);
+      const consumeRes = await fetch(consumeUrl, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+          'User-Agent': 'Serum-AI-Generator/1.0'
+        },
         body: JSON.stringify({ userId, toolId })
+      }).catch(err => {
+        console.warn(`Fetch error at consume (non-fatal):`, err);
+        return null;
       });
 
       if (!consumeRes.ok) {
