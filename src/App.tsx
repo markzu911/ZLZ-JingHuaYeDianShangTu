@@ -143,56 +143,88 @@ export default function App() {
     setActiveTab("settings");
   }, []);
 
-  const initSaas = useCallback(
-    async (context: any) => {
-      resetSession();
-      setSaasContext(context);
-    (window as any).SAAS_CONTEXT = context;
-    try {
-      const res = await fetch("/api/tool/launch", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          userId: context.userId,
-          toolId: context.toolId,
-        }),
-      });
-      const text = await res.text().catch(() => "");
-      let data: any = null;
-      try {
-        data = text ? JSON.parse(text) : null;
-      } catch {}
-      if (!data) {
-        data = { success: false, error: "Empty or invalid response from server", detail: text };
-      }
-      if (data.success && data.data?.user?.integral !== undefined) {
-        setUserIntegral(data.data.user.integral);
-        setSaasContext((prev: any) => ({ ...prev, ...data.data.user }));
-      }
-    } catch (err) {
-      console.error("Launch error:", err);
-    }
+  const getUnifiedContext = useCallback((input?: any) => {
+    const parentContext = (window as any).SAAS_CONTEXT || {};
+    const params = new URLSearchParams(window.location.search);
+
+    const rawUserId = input?.userId || input?.user_id || input?.data?.userId || input?.data?.user_id || params.get("userId") || params.get("user_id") || parentContext.userId || parentContext.user_id;
+    const rawToolId = input?.toolId || input?.tool_id || input?.data?.toolId || input?.data?.tool_id || params.get("toolId") || params.get("tool_id") || parentContext.toolId || parentContext.tool_id;
+    const rawRole = input?.role || input?.data?.role || params.get("role") || parentContext.role;
+    const rawToken = input?.token || input?.data?.token || input?.authorization || input?.data?.authorization || input?.accessToken || input?.data?.accessToken || params.get("token") || params.get("authorization") || params.get("accessToken") || parentContext.token || parentContext.authorization || parentContext.accessToken;
+
+    return {
+      userId: rawUserId ? String(rawUserId).trim() : undefined,
+      toolId: rawToolId ? String(rawToolId).trim() : undefined,
+      role: rawRole ? Number(rawRole) : undefined,
+      token: rawToken ? String(rawToken).trim() : undefined,
+    };
   }, []);
+
+  const initSaas = useCallback(
+    async (contextRaw: any) => {
+      resetSession();
+      const context = getUnifiedContext(contextRaw);
+      setSaasContext(context);
+      (window as any).SAAS_CONTEXT = context;
+
+      if (!context.userId || !context.toolId) {
+        console.warn("Unified context missing userId or toolId:", context);
+        return;
+      }
+
+      try {
+        const headers: any = { "Content-Type": "application/json" };
+        if (context.token) {
+          headers["Authorization"] = `Bearer ${context.token}`;
+        }
+        const res = await fetch("/api/tool/launch", {
+          method: "POST",
+          headers,
+          body: JSON.stringify({
+            userId: context.userId,
+            toolId: context.toolId,
+            role: context.role,
+            token: context.token
+          }),
+        });
+        const text = await res.text().catch(() => "");
+        let data: any = null;
+        try {
+          data = text ? JSON.parse(text) : null;
+        } catch {}
+        if (!data) {
+          data = { success: false, error: "Empty or invalid response from server", detail: text };
+        }
+        if (data.success && data.data?.user?.integral !== undefined) {
+          setUserIntegral(data.data.user.integral);
+          setSaasContext((prev: any) => ({ ...prev, ...data.data.user }));
+        }
+      } catch (err) {
+        console.error("Launch error:", err);
+      }
+    },
+    [resetSession, getUnifiedContext]
+  );
 
   useEffect(() => {
     // 1. Handle postMessage initialization
     const handleSaasMessage = (event: MessageEvent) => {
-      if (event.data?.type === "SAAS_INIT") {
-        console.log("SaaS Initialized via message:", event.data);
-        initSaas(event.data);
+      const data = event.data;
+      if (!data) return;
+
+      if (data.type === "SAAS_INIT" || data.userId || data.user_id || data.toolId || data.tool_id) {
+        console.log("SaaS Initialized via message event:", data);
+        initSaas(data);
       }
     };
 
     window.addEventListener("message", handleSaasMessage);
 
-    // 2. Fallback to URL params
-    const params = new URLSearchParams(window.location.search);
-    const userId = params.get("userId");
-    const toolId = params.get("toolId");
-    if (userId && toolId && !saasContext) {
-      const context = { userId, toolId };
-      console.log("SaaS Context from URL:", context);
-      initSaas(context);
+    // 2. Fallback check window.SAAS_CONTEXT or URL location query
+    const initialContext = getUnifiedContext();
+    if (initialContext.userId && initialContext.toolId) {
+      console.log("SaaS Context identified on mount:", initialContext);
+      initSaas(initialContext);
     }
 
     return () => window.removeEventListener("message", handleSaasMessage);

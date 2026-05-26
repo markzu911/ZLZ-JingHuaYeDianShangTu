@@ -8,10 +8,7 @@ dotenv.config();
 
 const app = express();
 const PORT = 3000;
-const RAW_SAAS_BASE = process.env.SAAS_API_BASE || process.env.VITE_SAAS_API_BASE || "https://gemini-proxy.aibigtree.com";
-const SAAS_BASE = RAW_SAAS_BASE.includes("aibigtree.com") && !RAW_SAAS_BASE.includes("gemini-proxy") 
-  ? RAW_SAAS_BASE.replace("aibigtree.com", "gemini-proxy.aibigtree.com") 
-  : RAW_SAAS_BASE;
+const SAAS_BASE = process.env.SAAS_API_BASE || process.env.VITE_SAAS_API_BASE || "https://aibigtree.com";
 const APP_SOURCE = "serum-ai-e-com-generator";
 
 app.use(express.json({ limit: '50mb' }));
@@ -46,12 +43,20 @@ app.all(['/api/tool/*', '/api/upload/*'], async (req, res) => {
     const saasUrl = `${SAAS_BASE}${req.url}`;
     console.log(`Forwarding request to: ${saasUrl} (${req.method})`);
     
+    const forwardHeaders: any = {
+      'Content-Type': 'application/json',
+      'User-Agent': 'Serum-AI-Generator/1.0',
+    };
+    if (req.headers['authorization']) {
+      forwardHeaders['Authorization'] = req.headers['authorization'];
+    }
+    if (req.headers['x-forwarded-for']) {
+      forwardHeaders['X-Forwarded-For'] = req.headers['x-forwarded-for'];
+    }
+
     const response = await fetch(saasUrl, {
       method: req.method,
-      headers: { 
-        'Content-Type': 'application/json',
-        'User-Agent': 'Serum-AI-Generator/1.0'
-      },
+      headers: forwardHeaders,
       body: req.method !== 'GET' && req.method !== 'HEAD' && req.body && Object.keys(req.body).length > 0 ? JSON.stringify(req.body) : undefined,
     }).catch(err => {
       throw new Error(`SaaS connection failed: ${err.message}`);
@@ -130,43 +135,63 @@ app.post("/api/gemini", async (req, res) => {
       });
 
     } else if (type === 'generate') {
-      const { 
-        userId, toolId, style, aspectRatio, imageSize, 
-        productImage, perspective, title, description 
-      } = params;
+       const { 
+         userId, toolId, role, token, style, aspectRatio, imageSize, 
+         productImage, perspective, title, description 
+       } = params;
 
-      const verifyUrl = `${SAAS_BASE}/api/tool/verify`;
-      console.log(`Verifying user: ${verifyUrl}`);
-      const verifyRes = await fetch(verifyUrl, {
-        method: 'POST',
-        headers: { 
-          'Content-Type': 'application/json',
-          'User-Agent': 'Serum-AI-Generator/1.0'
-        },
-        body: JSON.stringify({ userId, toolId })
-      }).catch(err => {
-        console.error(`Fetch error at verify:`, err);
-        return null;
-      });
+       const verifyUrl = `${SAAS_BASE}/api/tool/verify`;
+       console.log(`Verifying user: ${verifyUrl}`);
+       
+       const verifyHeaders: any = {
+         'Content-Type': 'application/json',
+         'User-Agent': 'Serum-AI-Generator/1.0'
+       };
+       if (token) {
+         verifyHeaders['Authorization'] = `Bearer ${token}`;
+       }
 
-      if (!verifyRes) {
-        return res.status(502).json({
-          success: false,
-          error: "Connection to SaaS failed at verify",
-          status: 502
-        });
-      }
+       const verifyRes = await fetch(verifyUrl, {
+         method: 'POST',
+         headers: verifyHeaders,
+         body: JSON.stringify({ userId, toolId, role, token })
+       }).catch(err => {
+         console.error(`Fetch error at verify:`, err);
+         return null;
+       });
 
-      const { text: verifyText, data: verify } = await readUpstreamResponse(verifyRes);
-      if (!verifyRes.ok || !verify?.success) {
-        console.warn("User verification failed:", verify || verifyText);
-        return res.status(403).json({
-          success: false,
-          error: "User verification failed",
-          detail: verify || verifyText || verifyRes.statusText,
-          status: verifyRes.status
-        });
-      }
+       if (!verifyRes) {
+         return res.status(502).json({
+           success: false,
+           error: "Connection to SaaS failed at verify",
+           status: 502,
+           request: {
+             userId,
+             toolId,
+             role,
+             hasToken: Boolean(token),
+             verifyUrl
+           }
+         });
+       }
+
+       const { text: verifyText, data: verify } = await readUpstreamResponse(verifyRes);
+       if (!verifyRes.ok || !verify?.success) {
+         console.warn("User verification failed:", verify || verifyText);
+         return res.status(403).json({
+           success: false,
+           error: "User verification failed",
+           detail: verify || verifyText || verifyRes.statusText,
+           status: verifyRes.status || 403,
+           request: {
+             userId,
+             toolId,
+             role,
+             hasToken: Boolean(token),
+             verifyUrl
+           }
+         });
+       }
 
       // Generate
       const promptText = `Task: Professional e-commerce product enhancement.
@@ -211,15 +236,21 @@ Instructions:
       // 3. Request Direct Token
       const tokenUrl = `${SAAS_BASE}/api/upload/direct-token`;
       console.log(`Requesting token: ${tokenUrl}`);
+      const tokenHeaders: any = {
+        'Content-Type': 'application/json',
+        'User-Agent': 'Serum-AI-Generator/1.0'
+      };
+      if (token) {
+        tokenHeaders['Authorization'] = `Bearer ${token}`;
+      }
       const tokenRes = await fetch(tokenUrl, {
         method: 'POST',
-        headers: { 
-          'Content-Type': 'application/json',
-          'User-Agent': 'Serum-AI-Generator/1.0'
-        },
+        headers: tokenHeaders,
         body: JSON.stringify({
           userId, 
           toolId, 
+          role,
+          token,
           source: APP_SOURCE, 
           mimeType: "image/png", 
           fileName, 
@@ -290,15 +321,21 @@ Instructions:
       // 5. Commit
       const commitUrl = `${SAAS_BASE}/api/upload/commit`;
       console.log(`Committing upload: ${commitUrl}`);
+      const commitHeaders: any = {
+        'Content-Type': 'application/json',
+        'User-Agent': 'Serum-AI-Generator/1.0'
+      };
+      if (token) {
+        commitHeaders['Authorization'] = `Bearer ${token}`;
+      }
       const commitRes = await fetch(commitUrl, {
         method: 'POST',
-        headers: { 
-          'Content-Type': 'application/json',
-          'User-Agent': 'Serum-AI-Generator/1.0'
-        },
+        headers: commitHeaders,
         body: JSON.stringify({ 
           userId, 
           toolId, 
+          role,
+          token,
           source: APP_SOURCE, 
           objectKey: tokenData.objectKey, 
           fileSize: imageBuffer.length 
@@ -334,13 +371,17 @@ Instructions:
       // 6. Finally Consume Points (safely catch and log warnings)
       const consumeUrl = `${SAAS_BASE}/api/tool/consume`;
       console.log(`Consuming points: ${consumeUrl}`);
+      const consumeHeaders: any = {
+        'Content-Type': 'application/json',
+        'User-Agent': 'Serum-AI-Generator/1.0'
+      };
+      if (token) {
+        consumeHeaders['Authorization'] = `Bearer ${token}`;
+      }
       const consumeRes = await fetch(consumeUrl, {
         method: 'POST',
-        headers: { 
-          'Content-Type': 'application/json',
-          'User-Agent': 'Serum-AI-Generator/1.0'
-        },
-        body: JSON.stringify({ userId, toolId })
+        headers: consumeHeaders,
+        body: JSON.stringify({ userId, toolId, role, token })
       }).catch(err => {
         console.warn(`Fetch error at consume (non-fatal):`, err);
         return null;
