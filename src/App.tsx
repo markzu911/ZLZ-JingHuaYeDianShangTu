@@ -10,7 +10,6 @@ import {
   Download,
   Image as ImageIcon,
   Trash2,
-  History,
   Check,
   ChevronRight,
   Maximize2,
@@ -35,19 +34,6 @@ interface AnalysisResultExtended {
   title: string;
   sellingPoints: SellingPoint[];
   footer?: string;
-}
-
-interface GeneratedItem {
-  id: string;
-  originalImage: string;
-  generatedImage: string;
-  title: string;
-  sellingPoints: SellingPoint[];
-  footer?: string;
-  style: string;
-  ratio: string;
-  resolution: string;
-  timestamp: string;
 }
 
 const STYLES = [
@@ -125,7 +111,6 @@ export default function App() {
   const [isGenerating, setIsGenerating] = useState(false);
   const [generatedImages, setGeneratedImages] = useState<string[]>([]);
   const [selectedImageIndex, setSelectedImageIndex] = useState(0);
-  const [history, setHistory] = useState<GeneratedItem[]>([]);
   const [activeTab, setActiveTab] = useState<"settings" | "result">("settings");
   const [isDarkBg, setIsDarkBg] = useState(false);
   const [selectedTextColor, setSelectedTextColor] = useState<string>("");
@@ -134,8 +119,18 @@ export default function App() {
   const [saasContext, setSaasContext] = useState<any>(null);
   const [userIntegral, setUserIntegral] = useState<number | null>(null);
 
-  const initSaas = useCallback(async (context: any) => {
-    setSaasContext(context);
+  const resetSession = useCallback(() => {
+    setOriginalImage(null);
+    setGeneratedImages([]);
+    setSelectedImageIndex(0);
+    setAnalysis({ title: "", sellingPoints: [] });
+    setActiveTab("settings");
+  }, []);
+
+  const initSaas = useCallback(
+    async (context: any) => {
+      resetSession();
+      setSaasContext(context);
     (window as any).SAAS_CONTEXT = context;
     try {
       const res = await fetch("/api/tool/launch", {
@@ -215,45 +210,6 @@ export default function App() {
   }, [generatedImageUrl]);
 
   // Handlers
-  const fetchHistory = async () => {
-    if (!saasContext) return;
-    try {
-      const { userId, role, toolId } = saasContext;
-      const res = await fetch(
-        `/api/upload/image?userId=${userId}&role=${role || 1}&toolId=${toolId || ""}&source=${APP_SOURCE}`,
-      );
-      const result = await res.json();
-      if (result.success && result.data) {
-        // Double filter client-side just in case
-        const appImages = result.data.filter((img: any) => {
-          const source = img.source || img.meta?.source || "";
-          const fileName = img.fileName || img.objectKey || img.url || "";
-          return source === APP_SOURCE || fileName.includes(APP_SOURCE);
-        });
-
-        // Map SaaS image data to match GeneratedItem interface
-        const mappedHistory: GeneratedItem[] = appImages.map((img: any) => ({
-          id: img.id,
-          originalImage: "", // original image is not stored in SaaS
-          generatedImage: img.url,
-          title: img.fileName.split("/").pop()?.split("_").pop()?.replace(".png", "") || "AI海报",
-          sellingPoints: [],
-          style: "",
-          ratio: "1:1",
-          resolution: "1K",
-          timestamp: new Date(img.createdAt).toLocaleTimeString(),
-        }));
-        setHistory(mappedHistory);
-      }
-    } catch (err) {
-      console.error("Failed to fetch history:", err);
-    }
-  };
-
-  useEffect(() => {
-    fetchHistory();
-  }, [saasContext]);
-
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
@@ -266,28 +222,6 @@ export default function App() {
       };
       reader.readAsDataURL(file);
     }
-  };
-
-  const saveToHistory = (item: GeneratedItem) => {
-    setHistory((prev) => [item, ...prev].slice(0, 30));
-  };
-
-  const wrapHistoryItem = (
-    image: string,
-    itemAnalysis: AnalysisResultExtended,
-  ) => {
-    return {
-      id: Math.random().toString(36).substr(2, 9),
-      originalImage: originalImage!,
-      generatedImage: image,
-      title: itemAnalysis.title,
-      sellingPoints: itemAnalysis.sellingPoints,
-      footer: itemAnalysis.footer,
-      style: selectedStyle.name,
-      ratio: selectedRatio,
-      resolution: selectedResolution,
-      timestamp: new Date().toLocaleTimeString(),
-    };
   };
 
   const addSellingPoint = () => {
@@ -352,7 +286,6 @@ export default function App() {
         setAnalysis(itemAnalysis);
         setGeneratedImages([url]);
         setSelectedImageIndex(0); // Update to show latest image
-        saveToHistory(wrapHistoryItem(url, itemAnalysis));
       } catch (imgError: any) {
         console.error(`Generation error:`, imgError);
 
@@ -386,25 +319,6 @@ export default function App() {
                   setGeneratedImages([url]);
                   setSelectedImageIndex(0);
                   console.log("Recovered 504 image from SaaS:", url);
-
-                  const mappedItem: GeneratedItem = {
-                    id: latestImg.id,
-                    originalImage: originalImage!,
-                    generatedImage: latestImg.url,
-                    title:
-                      latestImg.fileName.split("/").pop()?.split("_").pop()?.replace(".png", "") ||
-                      "AI海报",
-                    sellingPoints: newAnalysis.sellingPoints,
-                    footer: newAnalysis.footer,
-                    style: selectedStyle.name,
-                    ratio: selectedRatio,
-                    resolution: selectedResolution,
-                    timestamp: new Date(latestImg.createdAt).toLocaleTimeString(),
-                  };
-                  setHistory((prev) => [
-                    mappedItem,
-                    ...prev.filter((h) => h.id !== mappedItem.id),
-                  ]);
                 }
               }
             }
@@ -455,47 +369,6 @@ export default function App() {
       console.error("Failed to export image", err);
       alert("导出图片失败，可能是图片未完全加载或网络问题，请稍后重试");
     }
-  };
-
-  const removeFromHistory = async (item: GeneratedItem, e: React.MouseEvent) => {
-    e.stopPropagation();
-    if (!saasContext) return;
-
-    // Safety check: ensure it belongs to this app
-    const isAppImage = item.generatedImage.includes(APP_SOURCE);
-    if (!isAppImage) {
-      console.warn("Attempted to delete an image not belonging to this app.");
-      return;
-    }
-
-    try {
-      const { userId, role } = saasContext;
-      const res = await fetch("/api/upload/image", {
-        method: "DELETE",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id: item.id, userId, role: role || 1 }),
-      });
-      const result = await res.json();
-      if (result.success) {
-        setHistory((prev) => prev.filter((h) => h.id !== item.id));
-      }
-    } catch (err) {
-      console.error("Failed to delete image:", err);
-    }
-  };
-
-  const selectHistoryItem = (item: GeneratedItem) => {
-    setOriginalImage(item.originalImage);
-    setGeneratedImages([item.generatedImage]);
-    setSelectedImageIndex(0);
-    setAnalysis({
-      title: item.title,
-      sellingPoints: item.sellingPoints,
-      footer: item.footer,
-    });
-    setSelectedRatio(item.ratio);
-    setSelectedResolution(item.resolution);
-    setActiveTab("result");
   };
 
   return (
@@ -873,59 +746,6 @@ export default function App() {
                         <p className="text-lg">请先在第一步上传并点击生成商品图</p>
                       </div>
                     )}
-                  </div>
-
-                  {/* History Section at the bottom left */}
-                  <div className="w-full bg-white rounded-3xl p-6 border border-slate-200 shadow-sm flex flex-col shrink-0">
-                    <div className="flex items-center gap-2 w-full mb-4">
-                      <History className="w-5 h-5 text-slate-400" />
-                      <h3 className="font-semibold text-slate-700">
-                        历史记录
-                      </h3>
-                    </div>
-                    <div className="flex overflow-x-auto gap-4 custom-scrollbar pb-2">
-                      {history.length === 0 ? (
-                        <div className="text-center py-4 w-full opacity-40">
-                          <History className="w-8 h-8 mx-auto mb-2 text-slate-300" />
-                          <p className="text-sm text-slate-400">
-                            暂无历史记录
-                          </p>
-                        </div>
-                      ) : (
-                        history.map((item) => (
-                          <div
-                            key={item.id}
-                            onClick={() => selectHistoryItem(item)}
-                            className={`group relative w-[220px] shrink-0 cursor-pointer rounded-2xl border p-3 flex gap-3 transition-all items-center ${
-                              generatedImages.length === 1 &&
-                              generatedImages[0] === item.generatedImage
-                                ? "border-orange-500 bg-orange-50 ring-2 ring-orange-200"
-                                : "border-slate-100 bg-slate-50 hover:border-orange-200 hover:bg-orange-50"
-                            }`}
-                          >
-                            <img
-                              src={item.generatedImage}
-                              className="w-[60px] h-[60px] rounded-xl object-cover bg-white shadow-sm shrink-0"
-                              alt="history"
-                            />
-                            <div className="flex-1 min-w-0">
-                              <p className="text-sm font-semibold text-slate-700 truncate">
-                                {item.title}
-                              </p>
-                              <p className="text-[10px] text-slate-400 mt-1 uppercase font-medium">
-                                {item.resolution} | {item.ratio}
-                              </p>
-                            </div>
-                            <button
-                              onClick={(e) => removeFromHistory(item, e)}
-                              className="absolute top-2 right-2 p-1.5 opacity-0 group-hover:opacity-100 text-slate-400 hover:text-red-500 bg-white shadow-sm rounded-full transition-all"
-                            >
-                              <Trash2 className="w-3.5 h-3.5" />
-                            </button>
-                          </div>
-                        ))
-                      )}
-                    </div>
                   </div>
                 </div>
 
