@@ -2,6 +2,7 @@ import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { GoogleGenAI, Type } from "@google/genai";
 
 const SAAS_API_BASE = process.env.SAAS_API_BASE || process.env.VITE_SAAS_API_BASE || "https://aibigtree.com";
+const SAAS_VERIFY_URL = process.env.SAAS_VERIFY_URL || "https://gemini-proxy.aibigtree.com/api/tool/verify";
 
 const ai = new GoogleGenAI({ 
   apiKey: process.env.GEMINI_API_KEY || "DUMMY_KEY",
@@ -145,7 +146,7 @@ async function handleGemini(req: VercelRequest, res: VercelResponse) {
         productImage, perspective, title, description 
       } = params;
 
-      const verifyUrl = `${SAAS_API_BASE.replace(/\/$/, "")}/api/tool/verify`;
+      const verifyUrl = SAAS_VERIFY_URL;
       console.log(`Verifying user inside handleGemini: ${verifyUrl} with userId=${userId}, toolId=${toolId}`);
       
       const verifyHeaders: any = {

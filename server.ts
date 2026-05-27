@@ -9,6 +9,7 @@ dotenv.config();
 const app = express();
 const PORT = 3000;
 const SAAS_API_BASE = process.env.SAAS_API_BASE || process.env.VITE_SAAS_API_BASE || "https://aibigtree.com";
+const SAAS_VERIFY_URL = process.env.SAAS_VERIFY_URL || "https://gemini-proxy.aibigtree.com/api/tool/verify";
 const APP_SOURCE = "serum-ai-e-com-generator";
 
 app.use(express.json({ limit: '50mb' }));
@@ -151,7 +152,7 @@ app.post("/api/gemini", async (req, res) => {
         productImage, perspective, title, description 
       } = params;
 
-      const verifyUrl = `${SAAS_API_BASE.replace(/\/$/, "")}/api/tool/verify`;
+      const verifyUrl = SAAS_VERIFY_URL;
       console.log(`Verifying user inside server /api/gemini: ${verifyUrl} with userId=${userId}, toolId=${toolId}`);
       
       const verifyHeaders: any = {
