@@ -75,54 +75,15 @@ export async function generateEcomBackground(
   aspectRatio: "1:1" | "3:4" | "4:3" | "16:9",
   imageSize: "1K" | "2K" | "4K",
   base64Product: string,
-  perspective?: string,
-  // New: SaaS context
-  userId?: string,
-  toolId?: string
+  perspective?: string
 ): Promise<string> {
-  const context = getUnifiedSaasContext();
-  const finalUserId = userId || context.userId;
-  const finalToolId = toolId || context.toolId;
-  const finalRole = context.role;
-  const finalToken = context.token;
-
-  console.log("generateEcomBackground: Calling /api/gemini with context:", {
-    userId: finalUserId,
-    toolId: finalToolId,
-    role: finalRole,
-    hasToken: Boolean(finalToken),
-    hostname: window.location.hostname
-  });
-
-  const isLocal = window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1";
-
-  // Check validity inside production vs local
-  if (!isLocal) {
-    if (!isValidSaasParam(finalUserId) || !isValidSaasParam(finalToolId)) {
-      alert("未获取到 SaaS 用户上下文，请从 SaaS 平台入口打开工具");
-      throw new Error("未获取到 SaaS 用户上下文，请从 SaaS 平台入口打开工具");
-    }
-  } else {
-    if (!finalUserId || !finalToolId || !isValidSaasParam(finalUserId) || !isValidSaasParam(finalToolId)) {
-      alert("未获取到 SaaS 用户上下文，请从 SaaS 平台入口打开工具");
-      throw new Error("未获取到 SaaS 用户上下文，请从 SaaS 平台入口打开工具");
-    }
-  }
-
   const reqHeaders: any = { "Content-Type": "application/json" };
-  if (finalToken) {
-    reqHeaders["Authorization"] = `Bearer ${finalToken}`;
-  }
 
   const response = await fetch("/api/gemini", {
     method: "POST",
     headers: reqHeaders,
     body: JSON.stringify({
       type: "generate",
-      userId: finalUserId,
-      toolId: finalToolId,
-      role: finalRole,
-      token: finalToken,
       style,
       title,
       description,
@@ -154,7 +115,7 @@ export async function generateEcomBackground(
         errorMessage = data.detail || data.error || data.message || "Generation failed";
       }
     }
-    console.error("SaaS generate api failed:", data);
+    console.error("Gemini generate api failed:", data);
     throw new Error(errorMessage);
   }
 

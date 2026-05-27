@@ -148,75 +148,9 @@ app.post("/api/gemini", async (req, res) => {
 
     } else if (type === 'generate') {
       const { 
-        userId, toolId, role, token, style, aspectRatio, imageSize, 
+        style, aspectRatio, imageSize, 
         productImage, perspective, title, description 
       } = params;
-
-      const verifyUrl = SAAS_VERIFY_URL;
-      console.log(`Verifying user inside server /api/gemini: ${verifyUrl} with userId=${userId}, toolId=${toolId}`);
-      
-      const verifyHeaders: any = {
-        'Content-Type': 'application/json',
-        'Accept': 'application/json',
-        'User-Agent': 'Serum-AI-Generator/1.0'
-      };
-      if (token) {
-        verifyHeaders['Authorization'] = `Bearer ${token}`;
-      }
-
-      let verifyRes;
-      try {
-        verifyRes = await fetch(verifyUrl, {
-          method: 'POST',
-          headers: verifyHeaders,
-          body: JSON.stringify({ userId, toolId, role, token }),
-          signal: AbortSignal.timeout(10000)
-        });
-      } catch (err: any) {
-        console.error(`Fetch error at verify (${verifyUrl}):`, err);
-        return res.status(502).json({
-          success: false,
-          error: "Connection to SaaS failed at verify step",
-          detail: err.message || String(err),
-          code: err.code || "FETCH_ERROR",
-          status: 502,
-          request: {
-            verifyUrl,
-            userId,
-            toolId,
-            role,
-            hasToken: Boolean(token),
-            saasApiBase: SAAS_API_BASE
-          }
-        });
-      }
-
-      if (!verifyRes.ok) {
-        const { text: verifyText, data: verifyErr } = await readResponseSafe(verifyRes);
-        console.warn("User verification failed backend:", verifyErr || verifyText);
-        return res.status(verifyRes.status).json({
-          success: false,
-          error: "User verification failed (SaaS returned error)",
-          detail: verifyErr || verifyText || verifyRes.statusText,
-          status: verifyRes.status,
-          request: {
-            verifyUrl,
-            userId,
-            toolId
-          }
-        });
-      }
-
-      const { data: verifyData } = await readResponseSafe(verifyRes);
-      if (!verifyData?.success) {
-        console.warn("User verification check failed (success: false):", verifyData);
-        return res.status(403).json({
-          success: false,
-          error: "User verification failed (Business logic)",
-          detail: verifyData,
-          status: 403
-        });
-      }
 
       // Generate Background with Gemini Imagen
       const promptText = `Task: Professional e-commerce product enhancement.
@@ -246,6 +180,7 @@ Instructions:
       for (const part of aiResponse.candidates?.[0]?.content.parts || []) {
         if (part.inlineData) { generatedBase64 = part.inlineData.data; break; }
       }
+
       if (!generatedBase64) {
         return res.status(500).json({
           success: false,
@@ -255,175 +190,8 @@ Instructions:
         });
       }
 
-      const imageBuffer = Buffer.from(generatedBase64, 'base64');
-      const fileName = `${APP_SOURCE}_${Date.now()}.png`;
-
-      // 3. Request Direct Token from SaaS Base
-      const tokenUrl = `${SAAS_API_BASE.replace(/\/$/, "")}/api/upload/direct-token`;
-      console.log(`Requesting upload token from: ${tokenUrl}`);
-      const tokenHeaders: any = {
-        'Content-Type': 'application/json',
-        'User-Agent': 'Serum-AI-Generator/1.0'
-      };
-      if (token) {
-        tokenHeaders['Authorization'] = `Bearer ${token}`;
-      }
-      const tokenRes = await fetch(tokenUrl, {
-        method: 'POST',
-        headers: tokenHeaders,
-        body: JSON.stringify({
-          userId, 
-          toolId, 
-          role,
-          token,
-          source: APP_SOURCE, 
-          mimeType: "image/png", 
-          fileName, 
-          fileSize: imageBuffer.length
-        })
-      }).catch(err => {
-        console.error(`Fetch error at direct-token:`, err);
-        return null;
-      });
-
-      if (!tokenRes) {
-        return res.status(502).json({
-          success: false,
-          error: "Connection to SaaS failed at direct-token",
-          status: 502
-        });
-      }
-
-      const { text: tokenText, data: tokenJson } = await readResponseSafe(tokenRes);
-
-      if (!tokenRes.ok || (!tokenJson?.success && !tokenJson?.uploadUrl)) {
-        console.error("Direct token failed:", {
-          status: tokenRes.status,
-          body: tokenJson || tokenText
-        });
-        return res.status(502).json({
-          success: false,
-          error: "Failed to get OSS upload token from SaaS",
-          detail: tokenJson || tokenText,
-          status: tokenRes.status
-        });
-      }
-      const tokenData = tokenJson;
-
-      // 4. Upload to OSS Object Storage
-      console.log(`Uploading to OSS: ${tokenData.uploadUrl.split('?')[0]}`);
-      const uploadRes = await fetch(tokenData.uploadUrl, {
-        method: tokenData.method || 'PUT',
-        headers: {
-          ...(tokenData.headers || {}),
-          'User-Agent': 'Serum-AI-Generator/1.0'
-        },
-        body: imageBuffer
-      }).catch(err => {
-        console.error(`Fetch error at OSS upload:`, err);
-        return null;
-      });
-
-      if (!uploadRes) {
-        return res.status(502).json({
-          success: false,
-          error: "Connection to OSS upload destination failed",
-          status: 502
-        });
-      }
-
-      if (!uploadRes.ok) {
-        const uploadText = await uploadRes.text().catch(() => "");
-        console.error("OSS upload failed:", uploadRes.status, uploadText);
-        return res.status(502).json({
-          success: false,
-          error: "OSS upload failed with remote service",
-          status: uploadRes.status,
-          detail: uploadText
-        });
-      }
-
-      // 5. Commit upload state to SaaS Base
-      const commitUrl = `${SAAS_API_BASE.replace(/\/$/, "")}/api/upload/commit`;
-      console.log(`Committing upload to SaaS: ${commitUrl}`);
-      const commitHeaders: any = {
-        'Content-Type': 'application/json',
-        'User-Agent': 'Serum-AI-Generator/1.0'
-      };
-      if (token) {
-        commitHeaders['Authorization'] = `Bearer ${token}`;
-      }
-      const commitRes = await fetch(commitUrl, {
-        method: 'POST',
-        headers: commitHeaders,
-        body: JSON.stringify({ 
-          userId, 
-          toolId, 
-          role,
-          token,
-          source: APP_SOURCE, 
-          objectKey: tokenData.objectKey, 
-          fileSize: imageBuffer.length 
-        })
-      }).catch(err => {
-        console.error(`Fetch error at commit:`, err);
-        return null;
-      });
-
-      if (!commitRes) {
-        return res.status(502).json({
-          success: false,
-          error: "Connection to SaaS failed at commit",
-          status: 502
-        });
-      }
-
-      const { text: commitText, data: commitData } = await readResponseSafe(commitRes);
-
-      if (!commitRes.ok || commitData?.success === false) {
-        console.error("Commit failed:", {
-          status: commitRes.status,
-          body: commitData || commitText
-        });
-        return res.status(502).json({
-          success: false,
-          error: "Upload commit failed with SaaS",
-          status: commitRes.status,
-          detail: commitData || commitText
-        });
-      }
-
-      // 6. Finally Consume Points (safely catch and log warnings)
-      const consumeUrl = `${SAAS_API_BASE.replace(/\/$/, "")}/api/tool/consume`;
-      console.log(`Consuming points on SaaS: ${consumeUrl}`);
-      const consumeHeaders: any = {
-        'Content-Type': 'application/json',
-        'User-Agent': 'Serum-AI-Generator/1.0'
-      };
-      if (token) {
-        consumeHeaders['Authorization'] = `Bearer ${token}`;
-      }
-      const consumeRes = await fetch(consumeUrl, {
-        method: 'POST',
-        headers: consumeHeaders,
-        body: JSON.stringify({ userId, toolId, role, token })
-      }).catch(err => {
-        console.warn(`Fetch error at consume (non-fatal):`, err);
-        return null;
-      });
-
-      if (consumeRes) {
-        const { text: consumeText, data: consume } = await readResponseSafe(consumeRes);
-        if (!consumeRes.ok || consume?.success === false) {
-          console.warn("Points consumption failed after success:", consume || consumeText);
-        }
-      } else {
-        console.warn("Points consumption request failed, but image generation already succeeded.");
-      }
-
       return res.json({
         success: true,
-        image: commitData.image || commitData,
         generatedUrl: `data:image/png;base64,${generatedBase64}`
       });
     }

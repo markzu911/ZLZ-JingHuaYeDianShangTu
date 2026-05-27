@@ -24,6 +24,7 @@ import {
   generateEcomBackground,
   AnalysisResult,
 } from "./lib/gemini.ts";
+import { persistResultImage } from "./lib/upload.ts";
 import * as htmlToImage from "html-to-image";
 
 interface SellingPoint {
@@ -330,12 +331,34 @@ export default function App() {
 
   const handleGenerate = async () => {
     if (!originalImage) return;
+
+    const { userId, toolId, role, token } = saasContext || {};
+    if (!userId || !toolId) {
+      alert("未获取到 SaaS 用户上下文，请从 SaaS 平台入口打开工具");
+      return;
+    }
+
     setIsGenerating(true);
     setActiveTab("result");
     setGeneratedImages([]);
     setSelectedImageIndex(0);
 
     try {
+      // 1. Verify
+      const headers: any = { "Content-Type": "application/json" };
+      if (token) headers["Authorization"] = `Bearer ${token}`;
+      
+      const verifyRes = await fetch("/api/tool/verify", {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ userId, toolId, role, token })
+      });
+      const verifyData = await verifyRes.json();
+      if (!verifyRes.ok || !verifyData.success) {
+        throw new Error(verifyData.error || "User verification failed");
+      }
+
+      // 2. Analyze (Optional but kept for this project's logic)
       const analysisResult = await analyzeProduct(originalImage);
       const newAnalysis: AnalysisResultExtended = {
         title: analysisResult.title || "精美产品",
@@ -347,99 +370,114 @@ export default function App() {
       };
       setAnalysis(newAnalysis);
 
-      // Generate images sequentially
-      try {
-        const url = await generateEcomBackground(
-          selectedStyle.prompt,
-          "",
-          "",
-          selectedRatio as any,
-          selectedResolution as any,
-          originalImage,
-          selectedPerspective.prompt,
-        );
+      // 3. Generate Gemini Background
+      const url = await generateEcomBackground(
+        selectedStyle.prompt,
+        "",
+        "",
+        selectedRatio as any,
+        selectedResolution as any,
+        originalImage,
+        selectedPerspective.prompt,
+      );
 
-        const itemAnalysis = { ...newAnalysis };
-        setAnalysis(itemAnalysis);
-        setGeneratedImages([url]);
-        setSelectedImageIndex(0); // Update to show latest image
-        saveToHistory(wrapHistoryItem(url, itemAnalysis));
-      } catch (imgError: any) {
-        console.error(`Generation error:`, imgError);
+      // 4. Update UI immediately
+      setGeneratedImages([url]);
+      setSelectedImageIndex(0);
 
-        if (imgError.message === "GENERATION_TIMEOUT_BUT_MAY_HAVE_SAVED") {
-          // Wait 4 seconds for SaaS to finish async processing potentially
-          await new Promise((resolve) => setTimeout(resolve, 4000));
+      // 5. Consume Points
+      const consumeRes = await fetch("/api/tool/consume", {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ userId, toolId, role, token })
+      });
+      const consumeData = await consumeRes.json();
+      if (consumeData.success && consumeData.data?.integral !== undefined) {
+        setUserIntegral(consumeData.data.integral);
+      }
 
-          // Refresh history from SaaS
+      // 6. Persist to SaaS
+      const persistRes = await persistResultImage(
+        url,
+        `${APP_SOURCE}_${Date.now()}.png`,
+        userId,
+        toolId,
+        role,
+        token,
+        APP_SOURCE
+      );
+
+      if (persistRes.success) {
+        const item = wrapHistoryItem(persistRes.image?.url || url, newAnalysis);
+        saveToHistory(item);
+      } else {
+        console.warn("Failed to persist image to SaaS:", persistRes.error);
+        // Still save to local history so user doesn't lose it in this session
+        saveToHistory(wrapHistoryItem(url, newAnalysis));
+      }
+
+    } catch (imgError: any) {
+      console.error(`Generation error:`, imgError);
+
+      if (imgError.message === "GENERATION_TIMEOUT_BUT_MAY_HAVE_SAVED") {
+        // Wait 4 seconds for SaaS to finish async processing potentially
+        await new Promise((resolve) => setTimeout(resolve, 4000));
+
+        // Refresh history from SaaS
+        try {
+          const { userId, role } = saasContext;
+          const res = await fetch(
+            `/api/upload/image?userId=${userId}&role=${role || 1}`,
+          );
+          const text = await res.text().catch(() => "");
+          let result: any = null;
           try {
-            const { userId, role, toolId } = saasContext;
-            const res = await fetch(
-              `/api/upload/image?userId=${userId}&role=${role || 1}&toolId=${toolId || ""}&source=${APP_SOURCE}`,
-            );
-            const text = await res.text().catch(() => "");
-            let result: any = null;
-            try {
-              result = text ? JSON.parse(text) : null;
-            } catch {}
-            if (!result) {
-              result = { success: false, error: "Empty or invalid response from server", detail: text };
-            }
+            result = text ? JSON.parse(text) : null;
+          } catch {}
+          
+          if (result && result.success && result.data && result.data.length > 0) {
+            const appImages = result.data.filter((img: any) => {
+              const source = img.source || img.meta?.source || "";
+              const fileName = img.fileName || img.objectKey || img.url || "";
+              return source === APP_SOURCE || fileName.includes(APP_SOURCE);
+            });
 
-            if (result.success && result.data && result.data.length > 0) {
-              const appImages = result.data.filter((img: any) => {
-                const source = img.source || img.meta?.source || "";
-                const fileName = img.fileName || img.objectKey || img.url || "";
-                return source === APP_SOURCE || fileName.includes(APP_SOURCE);
-              });
+            if (appImages.length > 0) {
+              const latestImg = appImages[0];
+              const createdTime = new Date(latestImg.createdAt).getTime();
+              const now = new Date().getTime();
 
-              if (appImages.length > 0) {
-                const latestImg = appImages[0];
-                const createdTime = new Date(latestImg.createdAt).getTime();
-                const now = new Date().getTime();
+              if (now - createdTime < 180000) { // 3 mins
+                const url = latestImg.url;
+                setGeneratedImages([url]);
+                setSelectedImageIndex(0);
+                console.log("Recovered 504 image from SaaS:", url);
 
-                if (now - createdTime < 120000) {
-                  // last 2 mins
-                  const url = latestImg.url;
-                  setGeneratedImages([url]);
-                  setSelectedImageIndex(0);
-                  console.log("Recovered 504 image from SaaS:", url);
-
-                  const mappedItem: GeneratedItem = {
-                    id: latestImg.id,
-                    originalImage: originalImage!,
-                    generatedImage: latestImg.url,
-                    title:
-                      latestImg.fileName.split("/").pop()?.split("_").pop()?.replace(".png", "") ||
-                      "AI海报",
-                    sellingPoints: newAnalysis.sellingPoints,
-                    footer: newAnalysis.footer,
-                    style: selectedStyle.name,
-                    ratio: selectedRatio,
-                    resolution: selectedResolution,
-                    timestamp: new Date(latestImg.createdAt).toLocaleTimeString(),
-                  };
-                  setHistory((prev) => [
-                    mappedItem,
-                    ...prev.filter((h) => h.id !== mappedItem.id),
-                  ]);
-                }
+                const mappedItem: GeneratedItem = {
+                  id: latestImg.id,
+                  originalImage: originalImage!,
+                  generatedImage: latestImg.url,
+                  title: "已恢复的历史海报",
+                  sellingPoints: analysis.sellingPoints,
+                  footer: analysis.footer,
+                  style: selectedStyle.name,
+                  ratio: selectedRatio,
+                  resolution: selectedResolution,
+                  timestamp: new Date(latestImg.createdAt).toLocaleTimeString(),
+                };
+                setHistory((prev) => [
+                  mappedItem,
+                  ...prev.filter((h) => h.id !== mappedItem.id),
+                ]);
               }
             }
-          } catch (refreshErr) {
-            console.error("Failed to recover image from history:", refreshErr);
           }
-        } else {
-          alert(imgError.message || "生成失败，请重试");
+        } catch (refreshErr) {
+          console.error("Failed to recover image from history:", refreshErr);
         }
+      } else {
+        alert(imgError.message || "生成失败，请重试");
       }
-
-      if (generatedImages.length === 0 && !isGenerating) {
-        // This means ALL failed if we get here and it was empty
-      }
-    } catch (error) {
-      console.error("Core generation logic failed:", error);
-      alert("生成过程出现异常，请检查网络或图片大小后重试");
     } finally {
       setIsGenerating(false);
     }
@@ -479,13 +517,6 @@ export default function App() {
     e.stopPropagation();
     if (!saasContext) return;
 
-    // Safety check: ensure it belongs to this app
-    const isAppImage = item.generatedImage.includes(APP_SOURCE);
-    if (!isAppImage) {
-      console.warn("Attempted to delete an image not belonging to this app.");
-      return;
-    }
-
     try {
       const { userId, role } = saasContext;
       const res = await fetch("/api/upload/image", {
@@ -493,19 +524,14 @@ export default function App() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ id: item.id, userId, role: role || 1 }),
       });
-      const text = await res.text().catch(() => "");
-      let result: any = null;
-      try {
-        result = text ? JSON.parse(text) : null;
-      } catch {}
-      if (!result) {
-        result = { success: false, error: "Empty or invalid response from server", detail: text };
-      }
+      const result = await res.json().catch(() => ({ success: false }));
       if (result.success) {
         setHistory((prev) => prev.filter((h) => h.id !== item.id));
       }
     } catch (err) {
       console.error("Failed to delete image:", err);
+      // Even if server fails, remove from UI for better experience
+      setHistory((prev) => prev.filter((h) => h.id !== item.id));
     }
   };
 
