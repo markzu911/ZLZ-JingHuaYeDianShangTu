@@ -8,7 +8,7 @@ dotenv.config();
 
 const app = express();
 const PORT = 3000;
-const SAAS_BASE = process.env.SAAS_API_BASE || process.env.VITE_SAAS_API_BASE || "https://aibigtree.com";
+const SAAS_API_BASE = process.env.SAAS_API_BASE || process.env.VITE_SAAS_API_BASE || "https://aibigtree.com";
 const APP_SOURCE = "serum-ai-e-com-generator";
 
 app.use(express.json({ limit: '50mb' }));
@@ -26,7 +26,8 @@ const ai = new GoogleGenAI({
 const ANALYZE_MODEL = process.env.GEMINI_ANALYZE_MODEL || "gemini-3.5-flash";
 const IMAGE_MODEL = process.env.GEMINI_IMAGE_MODEL || "gemini-3.1-flash-image-preview";
 
-async function readUpstreamResponse(response: any) {
+// Helper for safe upstream reading
+async function readResponseSafe(response: any) {
   const text = await response.text().catch(() => "");
   let data: any = null;
   try {
@@ -37,46 +38,55 @@ async function readUpstreamResponse(response: any) {
   return { text, data };
 }
 
+function normalizeBody(body: any) {
+  if (!body) return {};
+  return body;
+}
+
 // 1. SaaS Proxy
 app.all(['/api/tool/*', '/api/upload/*'], async (req, res) => {
-  try {
-    const saasUrl = `${SAAS_BASE}${req.url}`;
-    console.log(`Forwarding request to: ${saasUrl} (${req.method})`);
-    
-    const forwardHeaders: any = {
-      'Content-Type': 'application/json',
-      'User-Agent': 'Serum-AI-Generator/1.0',
-    };
-    if (req.headers['authorization']) {
-      forwardHeaders['Authorization'] = req.headers['authorization'];
-    }
-    if (req.headers['x-forwarded-for']) {
-      forwardHeaders['X-Forwarded-For'] = req.headers['x-forwarded-for'];
-    }
+  const apiPath = req.path;
+  const upstreamUrl = `${SAAS_API_BASE.replace(/\/$/, "")}${apiPath}`;
+  console.log(`Forwarding dev request to: ${upstreamUrl} (${req.method})`);
 
-    const response = await fetch(saasUrl, {
+  const headers: any = {
+    "Content-Type": "application/json",
+    Accept: "application/json",
+    "User-Agent": "Serum-AI-Generator/1.0",
+  };
+
+  if (req.headers["authorization"]) {
+    headers["Authorization"] = req.headers["authorization"];
+  }
+
+  try {
+    const upstream = await fetch(upstreamUrl, {
       method: req.method,
-      headers: forwardHeaders,
-      body: req.method !== 'GET' && req.method !== 'HEAD' && req.body && Object.keys(req.body).length > 0 ? JSON.stringify(req.body) : undefined,
-    }).catch(err => {
-      throw new Error(`SaaS connection failed: ${err.message}`);
+      headers,
+      body: req.method === "GET" || req.method === "HEAD" ? undefined : JSON.stringify(normalizeBody(req.body))
     });
 
-    const { text, data } = await readUpstreamResponse(response);
-    if (data) return res.status(response.status).json(data);
-    return res.status(response.status).json({
-      success: response.ok,
-      error: response.ok ? undefined : "SaaS upstream returned non-JSON response",
+    const { text, data } = await readResponseSafe(upstream);
+
+    if (data) {
+      return res.status(upstream.status).json(data);
+    }
+
+    return res.status(upstream.status).json({
+      success: upstream.ok,
+      error: upstream.ok ? undefined : "SaaS upstream returned non-JSON response",
       detail: text,
-      status: response.status
+      status: upstream.status,
+      upstreamUrl
     });
   } catch (error: any) {
-    console.error("Local SaaS Proxy Error:", error);
-    res.status(500).json({ 
-      success: false, 
-      error: error.message,
+    console.error(`SaaS Proxy Fetch Error (${apiPath}):`, error);
+    return res.status(500).json({
+      success: false,
+      error: error.message || "Failed to reach SaaS upstream",
       detail: null,
-      status: 500
+      status: 500,
+      upstreamUrl
     });
   }
 });
@@ -91,7 +101,7 @@ app.post("/api/gemini", async (req, res) => {
     });
   }
 
-  const { type, ...params } = req.body;
+  const { type, ...params } = normalizeBody(req.body);
 
   try {
     if (type === 'analyze') {
@@ -135,65 +145,67 @@ app.post("/api/gemini", async (req, res) => {
       });
 
     } else if (type === 'generate') {
-       const { 
-         userId, toolId, role, token, style, aspectRatio, imageSize, 
-         productImage, perspective, title, description 
-       } = params;
+      const { 
+        userId, toolId, role, token, style, aspectRatio, imageSize, 
+        productImage, perspective, title, description 
+      } = params;
 
-       const verifyUrl = `${SAAS_BASE}/api/tool/verify`;
-       console.log(`Verifying user: ${verifyUrl}`);
-       
-       const verifyHeaders: any = {
-         'Content-Type': 'application/json',
-         'User-Agent': 'Serum-AI-Generator/1.0'
-       };
-       if (token) {
-         verifyHeaders['Authorization'] = `Bearer ${token}`;
-       }
+      const verifyUrl = `${SAAS_API_BASE.replace(/\/$/, "")}/api/tool/verify`;
+      console.log(`Verifying user inside server /api/gemini: ${verifyUrl}`);
+      
+      const verifyHeaders: any = {
+        'Content-Type': 'application/json',
+        'User-Agent': 'Serum-AI-Generator/1.0'
+      };
+      if (token) {
+        verifyHeaders['Authorization'] = `Bearer ${token}`;
+      }
 
-       const verifyRes = await fetch(verifyUrl, {
-         method: 'POST',
-         headers: verifyHeaders,
-         body: JSON.stringify({ userId, toolId, role, token })
-       }).catch(err => {
-         console.error(`Fetch error at verify:`, err);
-         return null;
-       });
+      const verifyRes = await fetch(verifyUrl, {
+        method: 'POST',
+        headers: verifyHeaders,
+        body: JSON.stringify({ userId, toolId, role, token })
+      }).catch(err => {
+        console.error(`Fetch error at verify:`, err);
+        return null;
+      });
 
-       if (!verifyRes) {
-         return res.status(502).json({
-           success: false,
-           error: "Connection to SaaS failed at verify",
-           status: 502,
-           request: {
-             userId,
-             toolId,
-             role,
-             hasToken: Boolean(token),
-             verifyUrl
-           }
-         });
-       }
+      if (!verifyRes) {
+        return res.status(502).json({
+          success: false,
+          error: "Connection to SaaS failed at verify",
+          status: 502,
+          request: {
+            verifyUrl,
+            userId,
+            toolId,
+            role,
+            hasToken: Boolean(token),
+            saasApiBase: SAAS_API_BASE
+          }
+        });
+      }
 
-       const { text: verifyText, data: verify } = await readUpstreamResponse(verifyRes);
-       if (!verifyRes.ok || !verify?.success) {
-         console.warn("User verification failed:", verify || verifyText);
-         return res.status(403).json({
-           success: false,
-           error: "User verification failed",
-           detail: verify || verifyText || verifyRes.statusText,
-           status: verifyRes.status || 403,
-           request: {
-             userId,
-             toolId,
-             role,
-             hasToken: Boolean(token),
-             verifyUrl
-           }
-         });
-       }
+      const { text: verifyText, data: verify } = await readResponseSafe(verifyRes);
+      if (!verifyRes.ok || !verify?.success) {
+        console.warn("User verification failed backend:", verify || verifyText);
+        return res.status(403).json({
+          success: false,
+          error: "User verification failed",
+          detail: verify || verifyText || verifyRes.statusText,
+          status: verifyRes.status || 403,
+          request: {
+            verifyUrl,
+            userId,
+            toolId,
+            role,
+            hasToken: Boolean(token),
+            saasApiBase: SAAS_API_BASE
+          }
+        });
+      }
 
-      // Generate
+      // Generate Background with Gemini Imagen
       const promptText = `Task: Professional e-commerce product enhancement.
 Instructions:
 1. Identify product in image.
@@ -233,9 +245,9 @@ Instructions:
       const imageBuffer = Buffer.from(generatedBase64, 'base64');
       const fileName = `${APP_SOURCE}_${Date.now()}.png`;
 
-      // 3. Request Direct Token
-      const tokenUrl = `${SAAS_BASE}/api/upload/direct-token`;
-      console.log(`Requesting token: ${tokenUrl}`);
+      // 3. Request Direct Token from SaaS Base
+      const tokenUrl = `${SAAS_API_BASE.replace(/\/$/, "")}/api/upload/direct-token`;
+      console.log(`Requesting upload token from: ${tokenUrl}`);
       const tokenHeaders: any = {
         'Content-Type': 'application/json',
         'User-Agent': 'Serum-AI-Generator/1.0'
@@ -269,9 +281,9 @@ Instructions:
         });
       }
 
-      const { text: tokenText, data: tokenJson } = await readUpstreamResponse(tokenRes);
+      const { text: tokenText, data: tokenJson } = await readResponseSafe(tokenRes);
 
-      if (!tokenRes.ok || !tokenJson?.success && !tokenJson?.uploadUrl) {
+      if (!tokenRes.ok || (!tokenJson?.success && !tokenJson?.uploadUrl)) {
         console.error("Direct token failed:", {
           status: tokenRes.status,
           body: tokenJson || tokenText
@@ -285,7 +297,7 @@ Instructions:
       }
       const tokenData = tokenJson;
 
-      // 4. Upload to OSS
+      // 4. Upload to OSS Object Storage
       console.log(`Uploading to OSS: ${tokenData.uploadUrl.split('?')[0]}`);
       const uploadRes = await fetch(tokenData.uploadUrl, {
         method: tokenData.method || 'PUT',
@@ -318,9 +330,9 @@ Instructions:
         });
       }
 
-      // 5. Commit
-      const commitUrl = `${SAAS_BASE}/api/upload/commit`;
-      console.log(`Committing upload: ${commitUrl}`);
+      // 5. Commit upload state to SaaS Base
+      const commitUrl = `${SAAS_API_BASE.replace(/\/$/, "")}/api/upload/commit`;
+      console.log(`Committing upload to SaaS: ${commitUrl}`);
       const commitHeaders: any = {
         'Content-Type': 'application/json',
         'User-Agent': 'Serum-AI-Generator/1.0'
@@ -353,7 +365,7 @@ Instructions:
         });
       }
 
-      const { text: commitText, data: commitData } = await readUpstreamResponse(commitRes);
+      const { text: commitText, data: commitData } = await readResponseSafe(commitRes);
 
       if (!commitRes.ok || commitData?.success === false) {
         console.error("Commit failed:", {
@@ -369,8 +381,8 @@ Instructions:
       }
 
       // 6. Finally Consume Points (safely catch and log warnings)
-      const consumeUrl = `${SAAS_BASE}/api/tool/consume`;
-      console.log(`Consuming points: ${consumeUrl}`);
+      const consumeUrl = `${SAAS_API_BASE.replace(/\/$/, "")}/api/tool/consume`;
+      console.log(`Consuming points on SaaS: ${consumeUrl}`);
       const consumeHeaders: any = {
         'Content-Type': 'application/json',
         'User-Agent': 'Serum-AI-Generator/1.0'
@@ -388,7 +400,7 @@ Instructions:
       });
 
       if (consumeRes) {
-        const { text: consumeText, data: consume } = await readUpstreamResponse(consumeRes);
+        const { text: consumeText, data: consume } = await readResponseSafe(consumeRes);
         if (!consumeRes.ok || consume?.success === false) {
           console.warn("Points consumption failed after success:", consume || consumeText);
         }
@@ -403,7 +415,7 @@ Instructions:
       });
     }
   } catch (error: any) {
-    console.error("Gemini Local Error:", error);
+    console.error("Gemini Consolidated Local Route Error:", error);
     res.status(500).json({ 
       success: false, 
       error: error.message || "Internal server error during Gemini processing",

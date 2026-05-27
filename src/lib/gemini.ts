@@ -99,13 +99,13 @@ export async function generateEcomBackground(
   // Check validity inside production vs local
   if (!isLocal) {
     if (!isValidSaasParam(finalUserId) || !isValidSaasParam(finalToolId)) {
-      alert("未获取到 SaaS 用户上下文，请从 SaaS 平台重新打开工具");
-      throw new Error("未获取到 SaaS 用户上下文，请从 SaaS 平台重新打开工具");
+      alert("未获取到 SaaS 用户上下文，请从 SaaS 平台入口打开工具");
+      throw new Error("未获取到 SaaS 用户上下文，请从 SaaS 平台入口打开工具");
     }
   } else {
-    if (!finalUserId || !finalToolId || String(finalUserId).trim() === "" || String(finalToolId).trim() === "" || String(finalUserId).toLowerCase() === "undefined" || String(finalUserId).toLowerCase() === "null") {
-      alert("未获取到 SaaS 用户上下文，请从 SaaS 平台重新打开工具");
-      throw new Error("未获取到 SaaS 用户上下文，请从 SaaS 平台重新打开工具");
+    if (!finalUserId || !finalToolId || !isValidSaasParam(finalUserId) || !isValidSaasParam(finalToolId)) {
+      alert("未获取到 SaaS 用户上下文，请从 SaaS 平台入口打开工具");
+      throw new Error("未获取到 SaaS 用户上下文，请从 SaaS 平台入口打开工具");
     }
   }
 
