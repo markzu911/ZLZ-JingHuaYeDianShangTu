@@ -12,7 +12,8 @@ export async function analyzeProduct(base64Image: string): Promise<AnalysisResul
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ 
       type: "analyze",
-      image: base64Image 
+      image: base64Image,
+      prompt: "Analyze the product in this image. Return a JSON object with 'title' (a catchy Chinese marketing title, max 8-10 chars), 'sellingPoints' (an array of 3 concise Chinese selling points, each max 12 chars), and 'footer' (a small Chinese tagline like '科研级专研'). Use ONLY Chinese for all values."
     }),
   });
   

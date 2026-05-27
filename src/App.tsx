@@ -114,9 +114,13 @@ export default function App() {
   // State
   const [originalImage, setOriginalImage] = useState<string | null>(null);
   const [analysis, setAnalysis] = useState<AnalysisResultExtended>({
-    title: "",
-    sellingPoints: [],
-    footer: "",
+    title: "高端科研精华",
+    sellingPoints: [
+      { id: "1", text: "深层修复肌底" },
+      { id: "2", text: "强韧屏障保护" },
+      { id: "3", text: "科研级专研成分" },
+    ],
+    footer: "实验室专研系列",
   });
   const [selectedStyle, setSelectedStyle] = useState(STYLES[0]);
   const [selectedPerspective, setSelectedPerspective] = useState(
@@ -330,7 +334,7 @@ export default function App() {
   const addSellingPoint = () => {
     const newPoint: SellingPoint = {
       id: Math.random().toString(36).substr(2, 9),
-      text: "新核心卖点",
+      text: "添加核心卖点",
     };
     setAnalysis((prev) => ({
       ...prev,
@@ -408,12 +412,18 @@ export default function App() {
       // 2. Analyze (Optional but kept for this project's logic)
       const analysisResult = await analyzeProduct(originalImage);
       const newAnalysis: AnalysisResultExtended = {
-        title: analysisResult.title || "精美产品",
-        sellingPoints: (analysisResult.sellingPoints || []).map((sp) => ({
-          id: Math.random().toString(36).substr(2, 9),
-          text: sp,
-        })),
-        footer: analysisResult.footer || "",
+        title: analysisResult.title || "高端科研精华",
+        sellingPoints: (analysisResult.sellingPoints && analysisResult.sellingPoints.length > 0) 
+          ? analysisResult.sellingPoints.map((sp) => ({
+              id: Math.random().toString(36).substr(2, 9),
+              text: sp,
+            }))
+          : [
+              { id: "1", text: "深层修复肌底" },
+              { id: "2", text: "强韧屏障保护" },
+              { id: "3", text: "科研级专研成分" },
+            ],
+        footer: analysisResult.footer || "实验室专研系列",
       };
       setAnalysis(newAnalysis);
 
@@ -1200,22 +1210,151 @@ export default function App() {
               className="relative max-w-full max-h-full flex items-center justify-center p-4"
               onClick={(e) => e.stopPropagation()}
             >
-              <img
-                src={generatedImageUrl}
-                className="max-w-full max-h-[85vh] object-contain shadow-2xl rounded-lg lg:rounded-2xl"
-                alt="Full Preview"
-                crossOrigin="anonymous"
-                referrerPolicy="no-referrer"
-              />
+              <div className="relative inline-block">
+                <img
+                  src={generatedImageUrl}
+                  className="max-w-full max-h-[85vh] object-contain shadow-2xl rounded-lg lg:rounded-2xl block"
+                  alt="Full Preview"
+                  crossOrigin="anonymous"
+                  referrerPolicy="no-referrer"
+                />
+                
+                {/* Overlay Text in Full Preview */}
+                <div
+                  className={`absolute inset-0 pointer-events-none z-20 py-[10%] px-[4%] flex flex-col items-center justify-between`}
+                >
+                  {/* Title - Fixed Top Center */}
+                  <div className="w-full text-center mb-4">
+                    <span
+                      className={`block font-sans font-bold text-[36px] lg:text-[48px] tracking-[0.15em] ${currentTextColor} leading-tight drop-shadow-xl whitespace-pre-line`}
+                    >
+                      {analysis.title}
+                    </span>
+                  </div>
+
+                  {/* Middle Area - Surrounding Selling Points */}
+                  <div className="flex-1 w-full relative">
+                    {analysis.sellingPoints.length === 1 && (
+                      <div
+                        className={`absolute left-0 top-1/2 -translate-y-1/2 flex items-center gap-3 ${currentTextColor} font-rounded font-semibold text-[20px] lg:text-[24px] drop-shadow-sm`}
+                      >
+                        <div
+                          className={`w-2 h-2 rounded-full shrink-0 ${
+                            currentTextColor.includes("white")
+                              ? "bg-white"
+                              : "bg-slate-800"
+                          }`}
+                        />
+                        <span className="whitespace-pre-line">
+                          {analysis.sellingPoints[0].text}
+                        </span>
+                      </div>
+                    )}
+
+                    {analysis.sellingPoints.length === 2 && (
+                      <>
+                        <div
+                          className={`absolute left-0 top-1/2 -translate-y-1/2 flex items-center gap-3 ${currentTextColor} font-rounded font-semibold text-[20px] lg:text-[24px] drop-shadow-sm text-right`}
+                        >
+                          <span className="whitespace-pre-line">
+                            {analysis.sellingPoints[0].text}
+                          </span>
+                          <div
+                            className={`w-2 h-2 rounded-full shrink-0 ${
+                              currentTextColor.includes("white")
+                                ? "bg-white"
+                                : "bg-slate-800"
+                            }`}
+                          />
+                        </div>
+                        <div
+                          className={`absolute -right-[10px] top-1/2 -translate-y-1/2 flex items-center gap-3 ${currentTextColor} font-rounded font-semibold text-[20px] lg:text-[24px] drop-shadow-sm text-left`}
+                        >
+                          <div
+                            className={`w-2 h-2 rounded-full shrink-0 ${
+                              currentTextColor.includes("white")
+                                ? "bg-white"
+                                : "bg-slate-800"
+                            }`}
+                          />
+                          <span className="whitespace-pre-line">
+                            {analysis.sellingPoints[1].text}
+                          </span>
+                        </div>
+                      </>
+                    )}
+
+                    {analysis.sellingPoints.length >= 3 && (
+                      <>
+                        <div
+                          className={`absolute left-0 top-1/2 -translate-y-1/2 flex items-center gap-3 ${currentTextColor} font-rounded font-semibold text-[20px] lg:text-[24px] drop-shadow-sm text-right`}
+                        >
+                          <span className="whitespace-pre-line">
+                            {analysis.sellingPoints[0].text}
+                          </span>
+                          <div
+                            className={`w-2 h-2 rounded-full shrink-0 ${
+                              currentTextColor.includes("white")
+                                ? "bg-white"
+                                : "bg-slate-800"
+                            }`}
+                          />
+                        </div>
+                        <div className="absolute -right-[10px] top-1/2 -translate-y-1/2 flex flex-col gap-12 lg:gap-24 opacity-90 scale-90 lg:scale-100">
+                          <div
+                            className={`flex items-center gap-3 ${currentTextColor} font-rounded font-semibold text-[20px] lg:text-[24px] drop-shadow-sm text-left`}
+                          >
+                            <div
+                              className={`w-2 h-2 rounded-full shrink-0 ${
+                                currentTextColor.includes("white")
+                                  ? "bg-white"
+                                  : "bg-slate-800"
+                              }`}
+                            />
+                            <span className="whitespace-pre-line">
+                              {analysis.sellingPoints[1].text}
+                            </span>
+                          </div>
+                          <div
+                            className={`flex items-center gap-3 ${currentTextColor} font-rounded font-semibold text-[20px] lg:text-[24px] drop-shadow-sm text-left`}
+                          >
+                            <div
+                              className={`w-2 h-2 rounded-full shrink-0 ${
+                                currentTextColor.includes("white")
+                                  ? "bg-white"
+                                  : "bg-slate-800"
+                              }`}
+                            />
+                            <span className="whitespace-pre-line">
+                              {analysis.sellingPoints[2].text || ""}
+                            </span>
+                          </div>
+                        </div>
+                      </>
+                    )}
+                  </div>
+
+                  {/* Footer - Fixed Bottom Center */}
+                  {analysis.footer && (
+                    <div className="w-full text-center mt-6">
+                      <span
+                        className={`block font-rounded font-light text-[18px] lg:text-[22px] tracking-[0.2em] opacity-90 ${currentTextColor} drop-shadow-sm`}
+                      >
+                        {analysis.footer}
+                      </span>
+                    </div>
+                  )}
+                </div>
+              </div>
               
               <div className="absolute -top-8 right-0 lg:-right-12 text-white/60 hover:text-white cursor-pointer transition-colors" onClick={() => setIsPreviewOpen(false)}>
                 <Check className="w-8 h-8 rotate-45" /> {/* Close button hack since no Close icon imported except Refresh */}
               </div>
 
-              <div className="absolute -bottom-16 left-1/2 -translate-x-1/2 flex items-center gap-4">
+              <div className="absolute bottom-0 right-0 lg:bottom-4 lg:right-4">
                  <button 
                   onClick={downloadImage}
-                  className="px-8 py-3 bg-white text-slate-900 rounded-full font-bold shadow-xl hover:scale-105 transition-transform flex items-center gap-2"
+                  className="px-8 py-3 bg-white text-slate-900 rounded-full font-bold shadow-2xl hover:scale-105 active:scale-95 transition-all flex items-center gap-2"
                 >
                   <Download className="w-5 h-5" /> 下载高清原图
                 </button>
