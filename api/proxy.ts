@@ -58,7 +58,8 @@ async function proxyToSaas(req: VercelRequest, res: VercelResponse, apiPath: str
     const upstream = await fetch(upstreamUrl, {
       method: req.method,
       headers,
-      body: req.method === "GET" || req.method === "HEAD" ? undefined : JSON.stringify(normalizeBody(req.body))
+      body: req.method === "GET" || req.method === "HEAD" ? undefined : JSON.stringify(normalizeBody(req.body)),
+      signal: AbortSignal.timeout(15000) // 15s timeout
     });
 
     const { text, data } = await readResponseSafe(upstream);
@@ -145,29 +146,32 @@ async function handleGemini(req: VercelRequest, res: VercelResponse) {
       } = params;
 
       const verifyUrl = `${SAAS_API_BASE.replace(/\/$/, "")}/api/tool/verify`;
-      console.log(`Verifying user inside handleGemini: ${verifyUrl}`);
+      console.log(`Verifying user inside handleGemini: ${verifyUrl} with userId=${userId}, toolId=${toolId}`);
       
       const verifyHeaders: any = {
         'Content-Type': 'application/json',
+        'Accept': 'application/json',
         'User-Agent': 'Serum-AI-Generator/1.0'
       };
       if (token) {
         verifyHeaders['Authorization'] = `Bearer ${token}`;
       }
 
-      const verifyRes = await fetch(verifyUrl, {
-        method: 'POST',
-        headers: verifyHeaders,
-        body: JSON.stringify({ userId, toolId, role, token })
-      }).catch(err => {
-        console.error(`Fetch error at verify:`, err);
-        return null;
-      });
-
-      if (!verifyRes) {
+      let verifyRes;
+      try {
+        verifyRes = await fetch(verifyUrl, {
+          method: 'POST',
+          headers: verifyHeaders,
+          body: JSON.stringify({ userId, toolId, role, token }),
+          signal: AbortSignal.timeout(10000) // 10s timeout for verify
+        });
+      } catch (err: any) {
+        console.error(`Fetch error at verify (${verifyUrl}):`, err);
         return res.status(502).json({
           success: false,
-          error: "Connection to SaaS failed at verify",
+          error: "Connection to SaaS failed at verify step",
+          detail: err.message || String(err),
+          code: err.code || "FETCH_ERROR",
           status: 502,
           request: {
             verifyUrl,
@@ -180,22 +184,30 @@ async function handleGemini(req: VercelRequest, res: VercelResponse) {
         });
       }
 
-      const { text: verifyText, data: verify } = await readResponseSafe(verifyRes);
-      if (!verifyRes.ok || !verify?.success) {
-        console.warn("User verification failed backend:", verify || verifyText);
-        return res.status(403).json({
+      if (!verifyRes.ok) {
+        const { text: verifyText, data: verifyErr } = await readResponseSafe(verifyRes);
+        console.warn("User verification failed backend:", verifyErr || verifyText);
+        return res.status(verifyRes.status).json({
           success: false,
-          error: "User verification failed",
-          detail: verify || verifyText || verifyRes.statusText,
-          status: verifyRes.status || 403,
+          error: "User verification failed (SaaS returned error)",
+          detail: verifyErr || verifyText || verifyRes.statusText,
+          status: verifyRes.status,
           request: {
             verifyUrl,
             userId,
-            toolId,
-            role,
-            hasToken: Boolean(token),
-            saasApiBase: SAAS_API_BASE
+            toolId
           }
+        });
+      }
+
+      const { data: verifyData } = await readResponseSafe(verifyRes);
+      if (!verifyData?.success) {
+        console.warn("User verification check failed (success: false):", verifyData);
+        return res.status(403).json({
+          success: false,
+          error: "User verification failed (Business logic)",
+          detail: verifyData,
+          status: 403
         });
       }
 
