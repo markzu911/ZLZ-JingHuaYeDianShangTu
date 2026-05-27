@@ -130,6 +130,7 @@ export default function App() {
   const [activeTab, setActiveTab] = useState<"settings" | "result">("settings");
   const [isDarkBg, setIsDarkBg] = useState(false);
   const [selectedTextColor, setSelectedTextColor] = useState<string>("");
+  const [isPreviewOpen, setIsPreviewOpen] = useState(false);
 
   // SaaS Context state
   const [saasContext, setSaasContext] = useState<any>(null);
@@ -757,37 +758,44 @@ export default function App() {
               initial={{ opacity: 0, scale: 0.98 }}
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 0.98 }}
-              className="h-full"
+              className="min-h-full flex flex-col gap-8 pb-12"
             >
-              <div className="max-w-[1400px] mx-auto h-full flex flex-col lg:flex-row gap-8 pb-4">
-                {/* STEP 2 - LEFT: Preview & History */}
-                <div className="flex-1 flex flex-col gap-6 min-w-0 h-full">
+              <div className="max-w-[1400px] mx-auto w-full flex flex-col lg:flex-row gap-8 items-start">
+                {/* STEP 2 - LEFT: Preview */}
+                <div className="flex-1 flex flex-col gap-6 min-w-0 w-full lg:sticky lg:top-4">
                   {/* Poster Preview Area */}
-                  <div className="bg-white rounded-[2.5rem] border border-slate-200 shadow-sm flex-1 flex flex-col min-h-[400px] overflow-hidden">
+                  <div className="bg-white rounded-[2.5rem] border border-slate-200 shadow-sm flex flex-col overflow-hidden">
                     {isGenerating ? (
-                      <div className="flex-1 flex flex-col items-center justify-center gap-4 p-12">
+                      <div className="aspect-[4/5] flex flex-col items-center justify-center gap-4 p-12">
                         <RefreshCw className="w-16 h-16 text-orange-500 animate-spin" />
-                        <p className="text-lg text-slate-600 font-medium tracking-wide">
+                        <p className="text-lg text-slate-600 font-medium tracking-wide text-center">
                           AI 正在为您创作专属商品海报...
                         </p>
-                        <p className="text-sm text-slate-400">
+                        <p className="text-sm text-slate-400 text-center">
                           请耐心等待，预计需要 5-10 秒
                         </p>
                       </div>
                     ) : generatedImages.length > 0 ? (
-                      <div className="flex-1 w-full flex items-center justify-center p-6 bg-slate-50/50">
-                        <div className="relative group max-w-full h-full flex items-center justify-center">
+                      <div className="w-full flex flex-col items-center justify-center p-6 lg:p-12 bg-slate-50/50">
+                        <div className="relative group max-w-full flex items-center justify-center">
                           <div
                             ref={resultContainerRef}
-                            className="relative overflow-hidden rounded-[2.5rem] shadow-2xl border border-slate-200 bg-white inline-block"
+                            onClick={() => setIsPreviewOpen(true)}
+                            className="relative overflow-hidden rounded-[2.5rem] shadow-2xl border border-slate-200 bg-white inline-block cursor-zoom-in transition-transform hover:scale-[1.02]"
                           >
                             <img
                               src={generatedImageUrl!}
-                              className="max-h-[60vh] object-contain pointer-events-none block"
+                              className="max-h-[75vh] w-auto object-contain pointer-events-none block"
                               alt="Poster Result"
                               crossOrigin="anonymous"
                               referrerPolicy="no-referrer"
                             />
+                            
+                            <div className="absolute top-4 right-4 z-30 opacity-0 group-hover:opacity-100 transition-opacity">
+                              <div className="bg-black/50 backdrop-blur-md p-2 rounded-full text-white">
+                                <Maximize2 className="w-5 h-5" />
+                              </div>
+                            </div>
 
                             {/* DYNAMIC POSTER LAYOUT LOGIC - SURROUNDING SUBJECT */}
                             <div
@@ -919,70 +927,17 @@ export default function App() {
                         </div>
                       </div>
                     ) : (
-                      <div className="flex-1 flex flex-col items-center justify-center gap-4 text-slate-400 p-12">
+                      <div className="aspect-[4/5] flex flex-col items-center justify-center gap-4 text-slate-400 p-12">
                         <ImageIcon className="w-16 h-16 opacity-10" />
-                        <p className="text-lg">请先在第一步上传并点击生成商品图</p>
+                        <p className="text-lg text-center">请先在第一步上传并点击生成商品图</p>
                       </div>
                     )}
-                  </div>
-
-                  {/* History Section at the bottom left */}
-                  <div className="w-full bg-white rounded-3xl p-6 border border-slate-200 shadow-sm flex flex-col shrink-0">
-                    <div className="flex items-center gap-2 w-full mb-4">
-                      <History className="w-5 h-5 text-slate-400" /> 
-                      <h3 className="font-semibold text-slate-700">
-                        历史记录
-                      </h3>
-                    </div>
-                    <div className="flex overflow-x-auto gap-4 custom-scrollbar pb-2">
-                      {history.length === 0 ? (
-                        <div className="text-center py-4 w-full opacity-40">
-                          <History className="w-8 h-8 mx-auto mb-2 text-slate-300" />
-                          <p className="text-sm text-slate-400">
-                            暂无历史记录
-                          </p>
-                        </div>
-                      ) : (
-                        history.map((item) => (
-                          <div
-                            key={item.id}
-                            onClick={() => selectHistoryItem(item)}
-                            className={`group relative w-[220px] shrink-0 cursor-pointer rounded-2xl border p-3 flex gap-3 transition-all items-center ${
-                              generatedImages.length === 1 &&
-                              generatedImages[0] === item.generatedImage
-                                ? "border-orange-500 bg-orange-50 ring-2 ring-orange-200"
-                                : "border-slate-100 bg-slate-50 hover:border-orange-200 hover:bg-orange-50"
-                            }`}
-                          >
-                            <img
-                              src={item.generatedImage}
-                              className="w-[60px] h-[60px] rounded-xl object-cover bg-white shadow-sm shrink-0"
-                              alt="history"
-                            />
-                            <div className="flex-1 min-w-0">
-                              <p className="text-sm font-semibold text-slate-700 truncate">
-                                {item.title}
-                              </p>
-                              <p className="text-[10px] text-slate-400 mt-1 uppercase font-medium">
-                                {item.resolution} | {item.ratio}
-                              </p>
-                            </div>
-                            <button
-                              onClick={(e) => removeFromHistory(item, e)}
-                              className="absolute top-2 right-2 p-1.5 opacity-0 group-hover:opacity-100 text-slate-400 hover:text-red-500 bg-white shadow-sm rounded-full transition-all"
-                            >
-                              <Trash2 className="w-3.5 h-3.5" />
-                            </button>
-                          </div>
-                        ))
-                      )}
-                    </div>
                   </div>
                 </div>
 
                 {/* STEP 2 - RIGHT: Editing Controls */}
-                <div className="w-full lg:w-[420px] shrink-0 h-full">
-                  <div className="bg-white rounded-[2rem] p-6 lg:p-8 border border-slate-200 shadow-sm h-full flex flex-col gap-6 overflow-y-auto">
+                <div className="w-full lg:w-[420px] shrink-0">
+                  <div className="bg-white rounded-[2rem] p-6 lg:p-8 border border-slate-200 shadow-sm flex flex-col gap-6">
                     {generatedImages.length > 0 && !isGenerating ? (
                       <>
                         <div className="flex items-center gap-2 font-bold text-lg shrink-0">
@@ -1109,10 +1064,118 @@ export default function App() {
                   </div>
                 </div>
               </div>
+
+              {/* STEP 2 - BOTTOM: History Row */}
+              <div className="max-w-[1400px] mx-auto w-full">
+                <div className="bg-white rounded-3xl p-8 border border-slate-200 shadow-sm flex flex-col shrink-0">
+                  <div className="flex items-center justify-between w-full mb-6">
+                    <div className="flex items-center gap-2">
+                      <History className="w-5 h-5 text-slate-400" />
+                      <h3 className="font-bold text-slate-800 text-lg">
+                        历史记录回顾
+                      </h3>
+                    </div>
+                    <span className="text-xs text-slate-400 font-medium">共 {history.length} 条记录</span>
+                  </div>
+                  <div className="flex overflow-x-auto gap-4 custom-scrollbar pb-4 -mx-2 px-2">
+                    {history.length === 0 ? (
+                      <div className="text-center py-12 w-full bg-slate-50/50 rounded-2xl border border-dashed border-slate-100">
+                        <div className="w-12 h-12 bg-white rounded-full flex items-center justify-center mx-auto mb-3 shadow-sm">
+                          <History className="w-6 h-6 text-slate-300" />
+                        </div>
+                        <p className="text-sm text-slate-400 font-medium">
+                          暂无历史生成记录
+                        </p>
+                      </div>
+                    ) : (
+                      history.map((item) => (
+                        <div
+                          key={item.id}
+                          onClick={() => selectHistoryItem(item)}
+                          className={`group relative w-[280px] shrink-0 cursor-pointer rounded-2xl border p-4 flex gap-4 transition-all items-center hover:shadow-md ${
+                            generatedImageUrl === item.generatedImage
+                              ? "border-orange-500 bg-orange-50 ring-1 ring-orange-200 shadow-sm"
+                              : "border-slate-100 bg-white hover:border-orange-200"
+                          }`}
+                        >
+                          <div className="relative w-20 h-20 rounded-xl overflow-hidden bg-slate-100 shrink-0 border border-slate-100">
+                            <img
+                              src={item.generatedImage}
+                              className="w-full h-full object-cover"
+                              alt="history"
+                            />
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm font-bold text-slate-800 truncate mb-1">
+                              {item.title || "生成的作品"}
+                            </p>
+                            <div className="flex items-center gap-2 mt-2">
+                              <span className="text-[10px] bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded font-bold uppercase">
+                                {item.ratio}
+                              </span>
+                              <span className="text-[10px] text-slate-400 font-medium">
+                                {item.timestamp}
+                              </span>
+                            </div>
+                          </div>
+                          <button
+                            onClick={(e) => removeFromHistory(item, e)}
+                            className="absolute -top-2 -right-2 p-1.5 opacity-0 group-hover:opacity-100 text-slate-400 hover:text-white hover:bg-red-500 bg-white shadow-md rounded-full transition-all border border-slate-100"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </div>
+              </div>
             </motion.div>
           )}
         </AnimatePresence>
       </div>
+
+      {/* Full Screen Preview Modal */}
+      <AnimatePresence>
+        {isPreviewOpen && generatedImageUrl && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            onClick={() => setIsPreviewOpen(false)}
+            className="fixed inset-0 z-[100] bg-black/95 backdrop-blur-xl flex items-center justify-center p-4 lg:p-12 cursor-zoom-out"
+          >
+            <motion.div
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+              className="relative max-w-full max-h-full flex items-center justify-center p-4"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <img
+                src={generatedImageUrl}
+                className="max-w-full max-h-[85vh] object-contain shadow-2xl rounded-lg lg:rounded-2xl"
+                alt="Full Preview"
+                crossOrigin="anonymous"
+                referrerPolicy="no-referrer"
+              />
+              
+              <div className="absolute -top-8 right-0 lg:-right-12 text-white/60 hover:text-white cursor-pointer transition-colors" onClick={() => setIsPreviewOpen(false)}>
+                <Check className="w-8 h-8 rotate-45" /> {/* Close button hack since no Close icon imported except Refresh */}
+              </div>
+
+              <div className="absolute -bottom-16 left-1/2 -translate-x-1/2 flex items-center gap-4">
+                 <button 
+                  onClick={downloadImage}
+                  className="px-8 py-3 bg-white text-slate-900 rounded-full font-bold shadow-xl hover:scale-105 transition-transform flex items-center gap-2"
+                >
+                  <Download className="w-5 h-5" /> 下载高清原图
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       <style>{`
         .custom-scrollbar::-webkit-scrollbar { width: 6px; }
