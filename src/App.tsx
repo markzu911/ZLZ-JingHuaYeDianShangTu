@@ -116,12 +116,13 @@ export default function App() {
   const [analysis, setAnalysis] = useState<AnalysisResultExtended>({
     title: "",
     sellingPoints: [],
+    footer: "",
   });
   const [selectedStyle, setSelectedStyle] = useState(STYLES[0]);
   const [selectedPerspective, setSelectedPerspective] = useState(
     PERSPECTIVES[0],
   );
-  const [selectedRatio, setSelectedRatio] = useState("1:1");
+  const [selectedRatio, setSelectedRatio] = useState("3:4");
   const [selectedResolution, setSelectedResolution] = useState("1K");
   const [isGenerating, setIsGenerating] = useState(false);
   const [generatedImages, setGeneratedImages] = useState<string[]>([]);
@@ -766,7 +767,7 @@ export default function App() {
                   {/* Poster Preview Area */}
                   <div className="bg-white rounded-[2.5rem] border border-slate-200 shadow-sm flex flex-col overflow-hidden">
                     {isGenerating ? (
-                      <div className="aspect-[4/5] flex flex-col items-center justify-center gap-4 p-12">
+                      <div className="min-h-[500px] flex flex-col items-center justify-center gap-4 p-12">
                         <RefreshCw className="w-16 h-16 text-orange-500 animate-spin" />
                         <p className="text-lg text-slate-600 font-medium tracking-wide text-center">
                           AI 正在为您创作专属商品海报...
@@ -775,17 +776,17 @@ export default function App() {
                           请耐心等待，预计需要 5-10 秒
                         </p>
                       </div>
-                    ) : generatedImages.length > 0 ? (
-                      <div className="w-full flex flex-col items-center justify-center p-6 lg:p-12 bg-slate-50/50">
+                    ) : generatedImageUrl ? (
+                      <div className="w-full flex flex-col items-center justify-center p-6 lg:p-8 bg-slate-50/50">
                         <div className="relative group max-w-full flex items-center justify-center">
                           <div
                             ref={resultContainerRef}
                             onClick={() => setIsPreviewOpen(true)}
-                            className="relative overflow-hidden rounded-[2.5rem] shadow-2xl border border-slate-200 bg-white inline-block cursor-zoom-in transition-transform hover:scale-[1.02]"
+                            className="relative overflow-hidden rounded-[2.5rem] shadow-2xl border border-slate-200 bg-white inline-block cursor-zoom-in transition-transform hover:scale-[1.01]"
                           >
                             <img
                               src={generatedImageUrl!}
-                              className="max-h-[75vh] w-auto object-contain pointer-events-none block"
+                              className="max-h-[90vh] w-auto h-auto object-contain pointer-events-none block"
                               alt="Poster Result"
                               crossOrigin="anonymous"
                               referrerPolicy="no-referrer"
@@ -936,131 +937,126 @@ export default function App() {
                 </div>
 
                 {/* STEP 2 - RIGHT: Editing Controls */}
-                <div className="w-full lg:w-[420px] shrink-0">
-                  <div className="bg-white rounded-[2rem] p-6 lg:p-8 border border-slate-200 shadow-sm flex flex-col gap-6">
-                    {generatedImages.length > 0 && !isGenerating ? (
-                      <>
-                        <div className="flex items-center gap-2 font-bold text-lg shrink-0">
-                          <Sparkles className="w-5 h-5 text-orange-500" />
-                          海报文案与排版
-                        </div>
-                        <div className="space-y-4 shrink-0">
-                          <div className="space-y-2">
-                            <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
-                              主标题内容
-                            </label>
-                            <textarea
-                              rows={2}
-                              value={analysis.title}
-                              onChange={(e) =>
-                                setAnalysis({
-                                  ...analysis,
-                                  title: e.target.value,
-                                })
-                              }
-                              className="w-full px-4 py-3 rounded-xl border border-slate-100 font-bold text-lg outline-none resize-none focus:ring-2 focus:ring-orange-100 transition-all bg-slate-50"
-                            />
-                          </div>
-                          <div className="space-y-3">
-                            <div className="flex justify-between items-center text-[10px] font-bold text-slate-400 uppercase tracking-wider">
-                              <span>
-                                核心卖点 (最多3条){" "}
-                                {analysis.sellingPoints.length}/3
-                              </span>
-                              <button
-                                onClick={addSellingPoint}
-                                className={`text-orange-500 px-3 py-1 rounded-md bg-orange-50 hover:bg-orange-100 transition-colors ${
-                                  analysis.sellingPoints.length >= 3
-                                    ? "opacity-30 cursor-not-allowed"
-                                    : ""
-                                }`}
-                                disabled={analysis.sellingPoints.length >= 3}
-                              >
-                                添加
-                              </button>
-                            </div>
-                            <div className="space-y-2">
-                              {analysis.sellingPoints.map((sp) => (
-                                <div key={sp.id} className="flex gap-2">
-                                  <textarea
-                                    rows={2}
-                                    value={sp.text}
-                                    onChange={(e) =>
-                                      updateSellingPointText(
-                                        sp.id,
-                                        e.target.value
-                                      )
-                                    }
-                                    className="flex-1 px-4 py-2 rounded-xl border border-slate-50 bg-slate-50 text-sm outline-none resize-none focus:ring-2 focus:ring-orange-100 transition-all"
-                                  />
-                                  <button
-                                    onClick={() => removeSellingPoint(sp.id)}
-                                    className="text-slate-300 hover:text-red-500 pt-2 transition-colors"
-                                  >
-                                    <Trash2 className="w-4 h-4" />
-                                  </button>
-                                </div>
-                              ))}
-                            </div>
-                          </div>
-                          <div className="space-y-2">
-                            <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
-                              底部补充信息
-                            </label>
-                            <input
-                              type="text"
-                              value={analysis.footer || ""}
-                              onChange={(e) =>
-                                setAnalysis({
-                                  ...analysis,
-                                  footer: e.target.value,
-                                })
-                              }
-                              className="w-full px-4 py-3 rounded-xl border border-slate-100 bg-slate-50 text-sm outline-none focus:ring-2 focus:ring-orange-100 transition-all"
-                            />
-                          </div>
-                        </div>
-
-                        <div className="bg-slate-50 rounded-2xl p-5 border border-slate-100 shrink-0 mt-2">
-                          <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-3">
-                            文字配色
+                <div className="w-full lg:w-[420px] shrink-0 h-full">
+                  <div className="bg-white rounded-[2rem] p-6 lg:p-8 border border-slate-200 shadow-sm min-h-[600px] flex flex-col gap-6">
+                    <div className="flex items-center gap-2 font-bold text-lg shrink-0">
+                      <Sparkles className="w-5 h-5 text-orange-500" />
+                      海报文案与排版
+                    </div>
+                    
+                    <div className="flex-1 flex flex-col gap-6">
+                      <div className="space-y-4 shrink-0">
+                        <div className="space-y-2">
+                          <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                            主标题内容
                           </label>
-                          <div className="grid grid-cols-2 lg:grid-cols-3 gap-2">
-                            {TEXT_COLORS.map((c) => (
-                              <button
-                                key={c.id}
-                                onClick={() => setSelectedTextColor(c.id)}
-                                className={`px-2 py-2.5 text-[11px] font-medium rounded-lg border transition-all ${
-                                  selectedTextColor === c.id
-                                    ? "bg-orange-50 text-orange-600 border-orange-500 shadow-sm"
-                                    : "bg-white text-slate-500 border-slate-100 hover:border-orange-200 hover:bg-orange-50"
-                                }`}
-                              >
-                                {c.name}
-                              </button>
+                          <textarea
+                            rows={2}
+                            value={analysis.title}
+                            onChange={(e) =>
+                              setAnalysis({
+                                ...analysis,
+                                title: e.target.value,
+                              })
+                            }
+                            className="w-full px-4 py-3 rounded-xl border border-slate-100 font-bold text-lg outline-none resize-none focus:ring-2 focus:ring-orange-100 transition-all bg-slate-50"
+                          />
+                        </div>
+                        <div className="space-y-3">
+                          <div className="flex justify-between items-center text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                            <span>
+                              核心卖点 (最多3条){" "}
+                              {analysis.sellingPoints.length}/3
+                            </span>
+                            <button
+                              onClick={addSellingPoint}
+                              className={`text-orange-500 px-3 py-1 rounded-md bg-orange-50 hover:bg-orange-100 transition-colors ${
+                                analysis.sellingPoints.length >= 3
+                                  ? "opacity-30 cursor-not-allowed"
+                                  : ""
+                              }`}
+                              disabled={analysis.sellingPoints.length >= 3}
+                            >
+                              添加
+                            </button>
+                          </div>
+                          <div className="space-y-2">
+                            {analysis.sellingPoints.map((sp) => (
+                              <div key={sp.id} className="flex gap-2">
+                                <textarea
+                                  rows={2}
+                                  value={sp.text}
+                                  onChange={(e) =>
+                                    updateSellingPointText(
+                                      sp.id,
+                                      e.target.value
+                                    )
+                                  }
+                                  className="flex-1 px-4 py-2 rounded-xl border border-slate-50 bg-slate-50 text-sm outline-none resize-none focus:ring-2 focus:ring-orange-100 transition-all"
+                                />
+                                <button
+                                  onClick={() => removeSellingPoint(sp.id)}
+                                  className="text-slate-300 hover:text-red-500 pt-2 transition-colors"
+                                >
+                                  <Trash2 className="w-4 h-4" />
+                                </button>
+                              </div>
                             ))}
                           </div>
                         </div>
-
-                        <div className="mt-auto pt-4 shrink-0">
-                          <button
-                            onClick={downloadImage}
-                            className="w-full py-4 rounded-2xl font-bold text-lg bg-orange-500 text-white hover:bg-orange-600 shadow-[0_4px_14px_0_rgba(249,115,22,0.39)] transition-all flex items-center justify-center gap-3"
-                          >
-                            <Download className="w-5 h-5" /> 下载高清海报
-                          </button>
+                        <div className="space-y-2">
+                          <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                            底部补充信息
+                          </label>
+                          <input
+                            type="text"
+                            value={analysis.footer || ""}
+                            onChange={(e) =>
+                              setAnalysis({
+                                ...analysis,
+                                footer: e.target.value,
+                              })
+                            }
+                            className="w-full px-4 py-3 rounded-xl border border-slate-100 bg-slate-50 text-sm outline-none focus:ring-2 focus:ring-orange-100 transition-all"
+                          />
                         </div>
-                      </>
-                    ) : (
-                      <div className="flex-1 flex flex-col items-center justify-center gap-4 text-slate-400 opacity-60 px-8 text-center bg-slate-50/50 rounded-2xl border-2 border-dashed border-slate-200">
-                        <ImageIcon className="w-12 h-12 opacity-20 mb-2" />
-                        <p className="font-medium text-slate-500">
-                          生成商品图后
-                          <br />
-                          方可在此处排版和修改文字
-                        </p>
                       </div>
-                    )}
+
+                      <div className="bg-slate-50 rounded-2xl p-5 border border-slate-100 shrink-0 mt-2">
+                        <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-3">
+                          文字配色
+                        </label>
+                        <div className="grid grid-cols-2 lg:grid-cols-3 gap-2">
+                          {TEXT_COLORS.map((c) => (
+                            <button
+                              key={c.id}
+                              onClick={() => setSelectedTextColor(c.id)}
+                              className={`px-2 py-2.5 text-[11px] font-medium rounded-lg border transition-all ${
+                                selectedTextColor === c.id
+                                  ? "bg-orange-50 text-orange-600 border-orange-500 shadow-sm"
+                                  : "bg-white text-slate-500 border-slate-100 hover:border-orange-200 hover:bg-orange-50"
+                              }`}
+                            >
+                              {c.name}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+
+                      <div className="mt-auto pt-4 shrink-0">
+                        <button
+                          onClick={downloadImage}
+                          disabled={!generatedImageUrl || isGenerating}
+                          className={`w-full py-4 rounded-2xl font-bold text-lg transition-all flex items-center justify-center gap-3 ${
+                            !generatedImageUrl || isGenerating
+                              ? "bg-slate-100 text-slate-400 cursor-not-allowed"
+                              : "bg-orange-500 text-white hover:bg-orange-600 shadow-[0_4px_14px_0_rgba(249,115,22,0.39)]"
+                          }`}
+                        >
+                          <Download className="w-5 h-5" /> 下载高清海报
+                        </button>
+                      </div>
+                    </div>
                   </div>
                 </div>
               </div>
