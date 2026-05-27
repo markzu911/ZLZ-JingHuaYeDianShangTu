@@ -56,7 +56,7 @@ const STYLES = [
     id: "high-tech",
     name: "高端科技",
     prompt:
-      "Replica of premium scientific aesthetic: A futuristic precision robotic metal arm or technical tweezers centrally holding the product. The background consists of elegant flowing golden liquid ribbons and waves with integrated digital glowing particle grids and luminous micro-points. Use soft golden cinematic lighting. IDENTIFY THE PRODUCT IN THE ATTACHED IMAGE AND REPLACE THE SUBJECT IN THIS SCENE WITH IT. Keep the robotic arm and golden wave environment exactly as described while seamlessly integrating the product.",
+      "Replica of premium scientific aesthetic: The product is positioned centrally within the frame. The background consists of elegant flowing golden liquid ribbons and waves with integrated digital glowing particle grids and luminous micro-points. Use soft golden cinematic lighting. IDENTIFY THE PRODUCT IN THE ATTACHED IMAGE AND PLACE IT IN THIS SCENE. Keep the golden wave environment exactly as described while seamlessly integrating the product.",
   },
   {
     id: "luxury",
