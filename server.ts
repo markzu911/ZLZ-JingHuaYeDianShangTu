@@ -65,7 +65,7 @@ app.all(['/api/tool/*', '/api/upload/*'], async (req, res) => {
       method: req.method,
       headers,
       body: req.method === "GET" || req.method === "HEAD" ? undefined : JSON.stringify(normalizeBody(req.body)),
-      signal: AbortSignal.timeout(15000)
+      signal: AbortSignal.timeout(60000)
     });
 
     const { text, data } = await readResponseSafe(upstream);

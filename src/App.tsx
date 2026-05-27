@@ -234,6 +234,51 @@ export default function App() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Initial history fetch when saasContext is ready
+  useEffect(() => {
+    if (saasContext?.userId) {
+      const fetchInitialHistory = async () => {
+        try {
+          const { userId, role, token } = saasContext;
+          const headers: any = {};
+          if (token) headers["Authorization"] = `Bearer ${token}`;
+
+          const res = await fetch(`/api/upload/image?userId=${userId}&role=${role || 1}`, { headers });
+          const text = await res.text();
+          let result: any = null;
+          try {
+            result = text ? JSON.parse(text) : null;
+          } catch {}
+
+          if (result?.success && result.data) {
+            const appHistory = result.data
+              .filter((img: any) => {
+                const source = img.source || img.meta?.source || "";
+                const fileName = img.fileName || img.objectKey || img.url || "";
+                return source === APP_SOURCE || fileName.includes(APP_SOURCE);
+              })
+              .map((img: any) => ({
+                id: img.id,
+                originalImage: img.url, // Fallback
+                generatedImage: img.url,
+                title: img.title || "历史作品",
+                sellingPoints: [],
+                footer: img.meta?.footer || "",
+                style: "已保存",
+                ratio: "3:4",
+                resolution: "1K",
+                timestamp: new Date(img.createdAt).toLocaleTimeString(),
+              }));
+            setHistory(appHistory);
+          }
+        } catch (err) {
+          console.error("Failed to fetch initial history:", err);
+        }
+      };
+      fetchInitialHistory();
+    }
+  }, [saasContext]);
+
   const currentTextColor = selectedTextColor
     ? selectedTextColor
     : isDarkBg
@@ -427,9 +472,13 @@ export default function App() {
 
         // Refresh history from SaaS
         try {
-          const { userId, role } = saasContext;
+          const { userId, role, token } = saasContext;
+          const headers: any = {};
+          if (token) headers["Authorization"] = `Bearer ${token}`;
+
           const res = await fetch(
             `/api/upload/image?userId=${userId}&role=${role || 1}`,
+            { headers }
           );
           const text = await res.text().catch(() => "");
           let result: any = null;
@@ -520,10 +569,13 @@ export default function App() {
     if (!saasContext) return;
 
     try {
-      const { userId, role } = saasContext;
+      const { userId, role, token } = saasContext;
+      const headers: any = { "Content-Type": "application/json" };
+      if (token) headers["Authorization"] = `Bearer ${token}`;
+
       const res = await fetch("/api/upload/image", {
         method: "DELETE",
-        headers: { "Content-Type": "application/json" },
+        headers,
         body: JSON.stringify({ id: item.id, userId, role: role || 1 }),
       });
       const result = await res.json().catch(() => ({ success: false }));

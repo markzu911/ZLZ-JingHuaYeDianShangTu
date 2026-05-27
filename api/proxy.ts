@@ -60,7 +60,7 @@ async function proxyToSaas(req: VercelRequest, res: VercelResponse, apiPath: str
       method: req.method,
       headers,
       body: req.method === "GET" || req.method === "HEAD" ? undefined : JSON.stringify(normalizeBody(req.body)),
-      signal: AbortSignal.timeout(15000) // 15s timeout
+      signal: AbortSignal.timeout(60000) // 60s timeout
     });
 
     const { text, data } = await readResponseSafe(upstream);
