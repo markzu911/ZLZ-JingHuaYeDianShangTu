@@ -1,8 +1,8 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { GoogleGenAI, Type } from "@google/genai";
 
-const SAAS_API_BASE = process.env.SAAS_API_BASE || process.env.VITE_SAAS_API_BASE || "https://aibigtree.com";
-const SAAS_VERIFY_URL = process.env.SAAS_VERIFY_URL || "https://gemini-proxy.aibigtree.com/api/tool/verify";
+const SAAS_API_BASE = process.env.SAAS_API_BASE || process.env.VITE_SAAS_API_BASE || "http://aibigtree.com";
+const SAAS_VERIFY_URL = process.env.SAAS_VERIFY_URL || "http://aibigtree.com/api/tool/verify";
 
 const ai = new GoogleGenAI({ 
   apiKey: process.env.GEMINI_API_KEY || "DUMMY_KEY",

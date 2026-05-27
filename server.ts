@@ -8,8 +8,8 @@ dotenv.config();
 
 const app = express();
 const PORT = 3000;
-const SAAS_API_BASE = process.env.SAAS_API_BASE || process.env.VITE_SAAS_API_BASE || "https://aibigtree.com";
-const SAAS_VERIFY_URL = process.env.SAAS_VERIFY_URL || "https://gemini-proxy.aibigtree.com/api/tool/verify";
+const SAAS_API_BASE = process.env.SAAS_API_BASE || process.env.VITE_SAAS_API_BASE || "http://aibigtree.com";
+const SAAS_VERIFY_URL = process.env.SAAS_VERIFY_URL || "http://aibigtree.com/api/tool/verify";
 const APP_SOURCE = "serum-ai-e-com-generator";
 
 app.use(express.json({ limit: '50mb' }));
