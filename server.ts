@@ -107,13 +107,15 @@ app.post("/api/gemini", async (req, res) => {
 
   try {
     if (type === 'analyze') {
-      const { image } = params;
+      const { image, prompt } = params;
+      const defaultPrompt = "Analyze this e-commerce product. Generate a professional product title (in simplified Chinese, 6-10 characters), 1-3 core selling points (in simplified Chinese, each 10-15 characters, highly attractive), and a footer text (in simplified Chinese, 4-8 characters, e.g. '科研级专研' or '实验室专研系列'). Return ONLY simplified Chinese for title, sellingPoints, and footer fields. Also suggest a poster layout type: 'center', 'left', 'right', 'top', or 'bottom' based on product shape.";
+      const finalPrompt = (prompt || defaultPrompt) + " IMPORTANT: You MUST generate all text fields ('title', 'sellingPoints', 'footer') in Simplified Chinese, absolutely NO English characters.";
       const aiResponse = await ai.models.generateContent({
         model: ANALYZE_MODEL,
         contents: {
           parts: [
             { inlineData: { data: image.split(',')[1] || image, mimeType: "image/png" } },
-            { text: "Analyze this e-commerce product. Generate a professional product title, 1-3 core selling points, and a footer text. Also suggest a poster layout type: 'center', 'left', 'right', 'top', or 'bottom' based on product shape." }
+            { text: finalPrompt }
           ]
         },
         config: {
