@@ -877,15 +877,8 @@ export default function App() {
                               <div className="flex-1 w-full relative">
                                 {analysis.sellingPoints.length === 1 && (
                                   <div
-                                    className={`absolute left-0 top-1/2 -translate-y-1/2 flex items-center gap-3 ${currentTextColor} font-rounded font-semibold text-[20px] drop-shadow-sm`}
+                                    className={`absolute left-0 top-1/2 -translate-y-1/2 flex items-center ${currentTextColor} font-rounded font-semibold text-[20px] drop-shadow-sm`}
                                   >
-                                    <div
-                                      className={`w-2 h-2 rounded-full shrink-0 ${
-                                        currentTextColor.includes("white")
-                                          ? "bg-white"
-                                          : "bg-slate-800"
-                                      }`}
-                                    />
                                     <span className="whitespace-pre-line">
                                       {analysis.sellingPoints[0].text}
                                     </span>
@@ -895,29 +888,15 @@ export default function App() {
                                 {analysis.sellingPoints.length === 2 && (
                                   <>
                                     <div
-                                      className={`absolute left-0 top-1/2 -translate-y-1/2 flex items-center gap-3 ${currentTextColor} font-rounded font-semibold text-[20px] drop-shadow-sm text-right`}
+                                      className={`absolute left-0 top-1/2 -translate-y-1/2 flex items-center ${currentTextColor} font-rounded font-semibold text-[20px] drop-shadow-sm text-right`}
                                     >
                                       <span className="whitespace-pre-line">
                                         {analysis.sellingPoints[0].text}
                                       </span>
-                                      <div
-                                        className={`w-2 h-2 rounded-full shrink-0 ${
-                                          currentTextColor.includes("white")
-                                            ? "bg-white"
-                                            : "bg-slate-800"
-                                        }`}
-                                      />
                                     </div>
                                     <div
-                                      className={`absolute -right-[10px] top-1/2 -translate-y-1/2 flex items-center gap-3 ${currentTextColor} font-rounded font-semibold text-[20px] drop-shadow-sm text-left`}
+                                      className={`absolute -right-[10px] top-1/2 -translate-y-1/2 flex items-center ${currentTextColor} font-rounded font-semibold text-[20px] drop-shadow-sm text-left`}
                                     >
-                                      <div
-                                        className={`w-2 h-2 rounded-full shrink-0 ${
-                                          currentTextColor.includes("white")
-                                            ? "bg-white"
-                                            : "bg-slate-800"
-                                      }`}
-                                      />
                                       <span className="whitespace-pre-line">
                                         {analysis.sellingPoints[1].text}
                                       </span>
@@ -928,44 +907,23 @@ export default function App() {
                                 {analysis.sellingPoints.length >= 3 && (
                                   <>
                                     <div
-                                      className={`absolute left-0 top-1/2 -translate-y-1/2 flex items-center gap-3 ${currentTextColor} font-rounded font-semibold text-[20px] drop-shadow-sm text-right`}
+                                      className={`absolute left-0 top-1/2 -translate-y-1/2 flex items-center ${currentTextColor} font-rounded font-semibold text-[20px] drop-shadow-sm text-right`}
                                     >
                                       <span className="whitespace-pre-line">
                                         {analysis.sellingPoints[0].text}
                                       </span>
-                                      <div
-                                        className={`w-2 h-2 rounded-full shrink-0 ${
-                                          currentTextColor.includes("white")
-                                            ? "bg-white"
-                                            : "bg-slate-800"
-                                        }`}
-                                      />
                                     </div>
                                     <div className="absolute -right-[10px] top-1/2 -translate-y-1/2 flex flex-col gap-24 lg:gap-40">
                                       <div
-                                        className={`flex items-center gap-3 ${currentTextColor} font-rounded font-semibold text-[20px] drop-shadow-sm text-left`}
+                                        className={`flex items-center ${currentTextColor} font-rounded font-semibold text-[20px] drop-shadow-sm text-left`}
                                       >
-                                        <div
-                                          className={`w-2 h-2 rounded-full shrink-0 ${
-                                            currentTextColor.includes("white")
-                                              ? "bg-white"
-                                              : "bg-slate-800"
-                                          }`}
-                                        />
                                         <span className="whitespace-pre-line">
                                           {analysis.sellingPoints[1].text}
                                         </span>
                                       </div>
                                       <div
-                                        className={`flex items-center gap-3 ${currentTextColor} font-rounded font-semibold text-[20px] drop-shadow-sm text-left`}
+                                        className={`flex items-center ${currentTextColor} font-rounded font-semibold text-[20px] drop-shadow-sm text-left`}
                                       >
-                                        <div
-                                          className={`w-2 h-2 rounded-full shrink-0 ${
-                                            currentTextColor.includes("white")
-                                              ? "bg-white"
-                                              : "bg-slate-800"
-                                          }`}
-                                        />
                                         <span className="whitespace-pre-line">
                                           {analysis.sellingPoints[2].text || ""}
                                         </span>
@@ -1236,15 +1194,8 @@ export default function App() {
                   <div className="flex-1 w-full relative">
                     {analysis.sellingPoints.length === 1 && (
                       <div
-                        className={`absolute left-0 top-1/2 -translate-y-1/2 flex items-center gap-3 ${currentTextColor} font-rounded font-semibold text-[20px] lg:text-[24px] drop-shadow-sm`}
+                        className={`absolute left-0 top-1/2 -translate-y-1/2 flex items-center ${currentTextColor} font-rounded font-semibold text-[20px] lg:text-[24px] drop-shadow-sm`}
                       >
-                        <div
-                          className={`w-2 h-2 rounded-full shrink-0 ${
-                            currentTextColor.includes("white")
-                              ? "bg-white"
-                              : "bg-slate-800"
-                          }`}
-                        />
                         <span className="whitespace-pre-line">
                           {analysis.sellingPoints[0].text}
                         </span>
@@ -1254,29 +1205,15 @@ export default function App() {
                     {analysis.sellingPoints.length === 2 && (
                       <>
                         <div
-                          className={`absolute left-0 top-1/2 -translate-y-1/2 flex items-center gap-3 ${currentTextColor} font-rounded font-semibold text-[20px] lg:text-[24px] drop-shadow-sm text-right`}
+                          className={`absolute left-0 top-1/2 -translate-y-1/2 flex items-center ${currentTextColor} font-rounded font-semibold text-[20px] lg:text-[24px] drop-shadow-sm text-right`}
                         >
                           <span className="whitespace-pre-line">
                             {analysis.sellingPoints[0].text}
                           </span>
-                          <div
-                            className={`w-2 h-2 rounded-full shrink-0 ${
-                              currentTextColor.includes("white")
-                                ? "bg-white"
-                                : "bg-slate-800"
-                            }`}
-                          />
                         </div>
                         <div
-                          className={`absolute -right-[10px] top-1/2 -translate-y-1/2 flex items-center gap-3 ${currentTextColor} font-rounded font-semibold text-[20px] lg:text-[24px] drop-shadow-sm text-left`}
+                          className={`absolute -right-[10px] top-1/2 -translate-y-1/2 flex items-center ${currentTextColor} font-rounded font-semibold text-[20px] lg:text-[24px] drop-shadow-sm text-left`}
                         >
-                          <div
-                            className={`w-2 h-2 rounded-full shrink-0 ${
-                              currentTextColor.includes("white")
-                                ? "bg-white"
-                                : "bg-slate-800"
-                            }`}
-                          />
                           <span className="whitespace-pre-line">
                             {analysis.sellingPoints[1].text}
                           </span>
@@ -1287,44 +1224,23 @@ export default function App() {
                     {analysis.sellingPoints.length >= 3 && (
                       <>
                         <div
-                          className={`absolute left-0 top-1/2 -translate-y-1/2 flex items-center gap-3 ${currentTextColor} font-rounded font-semibold text-[20px] lg:text-[24px] drop-shadow-sm text-right`}
+                          className={`absolute left-0 top-1/2 -translate-y-1/2 flex items-center ${currentTextColor} font-rounded font-semibold text-[20px] lg:text-[24px] drop-shadow-sm text-right`}
                         >
                           <span className="whitespace-pre-line">
                             {analysis.sellingPoints[0].text}
                           </span>
-                          <div
-                            className={`w-2 h-2 rounded-full shrink-0 ${
-                              currentTextColor.includes("white")
-                                ? "bg-white"
-                                : "bg-slate-800"
-                            }`}
-                          />
                         </div>
                         <div className="absolute -right-[10px] top-1/2 -translate-y-1/2 flex flex-col gap-12 lg:gap-24 opacity-90 scale-90 lg:scale-100">
                           <div
-                            className={`flex items-center gap-3 ${currentTextColor} font-rounded font-semibold text-[20px] lg:text-[24px] drop-shadow-sm text-left`}
+                            className={`flex items-center ${currentTextColor} font-rounded font-semibold text-[20px] lg:text-[24px] drop-shadow-sm text-left`}
                           >
-                            <div
-                              className={`w-2 h-2 rounded-full shrink-0 ${
-                                currentTextColor.includes("white")
-                                  ? "bg-white"
-                                  : "bg-slate-800"
-                              }`}
-                            />
                             <span className="whitespace-pre-line">
                               {analysis.sellingPoints[1].text}
                             </span>
                           </div>
                           <div
-                            className={`flex items-center gap-3 ${currentTextColor} font-rounded font-semibold text-[20px] lg:text-[24px] drop-shadow-sm text-left`}
+                            className={`flex items-center ${currentTextColor} font-rounded font-semibold text-[20px] lg:text-[24px] drop-shadow-sm text-left`}
                           >
-                            <div
-                              className={`w-2 h-2 rounded-full shrink-0 ${
-                                currentTextColor.includes("white")
-                                  ? "bg-white"
-                                  : "bg-slate-800"
-                              }`}
-                            />
                             <span className="whitespace-pre-line">
                               {analysis.sellingPoints[2].text || ""}
                             </span>
